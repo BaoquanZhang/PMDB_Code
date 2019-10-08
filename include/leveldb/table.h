@@ -6,6 +6,7 @@
 #define STORAGE_LEVELDB_INCLUDE_TABLE_H_
 
 #include <stdint.h>
+
 #include "leveldb/export.h"
 #include "leveldb/iterator.h"
 
@@ -31,15 +32,16 @@ class LEVELDB_EXPORT Table {
   // If successful, returns ok and sets "*table" to the newly opened
   // table.  The client should delete "*table" when no longer needed.
   // If there was an error while initializing the table, sets "*table"
-  // to NULL and returns a non-ok status.  Does not take ownership of
+  // to nullptr and returns a non-ok status.  Does not take ownership of
   // "*source", but the client must ensure that "source" remains live
   // for the duration of the returned table's lifetime.
   //
   // *file must remain live while this Table is in use.
-  static Status Open(const Options& options,
-                     RandomAccessFile* file,
-                     uint64_t file_size,
-                     Table** table);
+  static Status Open(const Options& options, RandomAccessFile* file,
+                     uint64_t file_size, Table** table);
+
+  Table(const Table&) = delete;
+  Table& operator=(const Table&) = delete;
 
   ~Table();
 
@@ -57,28 +59,24 @@ class LEVELDB_EXPORT Table {
   uint64_t ApproximateOffsetOf(const Slice& key) const;
 
  private:
+  friend class TableCache;
   struct Rep;
-  Rep* rep_;
 
-  explicit Table(Rep* rep) { rep_ = rep; }
   static Iterator* BlockReader(void*, const ReadOptions&, const Slice&);
+
+  explicit Table(Rep* rep) : rep_(rep) {}
 
   // Calls (*handle_result)(arg, ...) with the entry found after a call
   // to Seek(key).  May not make such a call if filter policy says
   // that key is not present.
-  friend class TableCache;
-  Status InternalGet(
-      const ReadOptions&, const Slice& key,
-      void* arg,
-      void (*handle_result)(void* arg, const Slice& k, const Slice& v));
-
+  Status InternalGet(const ReadOptions&, const Slice& key, void* arg,
+                     void (*handle_result)(void* arg, const Slice& k,
+                                           const Slice& v));
 
   void ReadMeta(const Footer& footer);
   void ReadFilter(const Slice& filter_handle_value);
 
-  // No copying allowed
-  Table(const Table&);
-  void operator=(const Table&);
+  Rep* const rep_;
 };
 
 }  // namespace leveldb
