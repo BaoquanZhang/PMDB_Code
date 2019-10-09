@@ -5,6 +5,8 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_DB_H_
 #define STORAGE_LEVELDB_INCLUDE_DB_H_
 
+#include <map>
+
 #include <stdint.h>
 #include <stdio.h>
 
@@ -17,6 +19,8 @@ namespace leveldb {
 // Update CMakeLists.txt if you change these
 static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
+
+extern std::map<std::string, std::string> slm_index;
 
 struct Options;
 struct ReadOptions;

@@ -14,6 +14,8 @@
 
 namespace leveldb {
 
+  std::map< std::string, std::string > slm_index;
+
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
   Status s;
@@ -34,6 +36,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
       Slice key = iter->key();
       meta->largest.DecodeFrom(key);
       builder->Add(key, iter->value());
+      slm_index.emplace(key.ToString(), fname);
     }
 
     // Finish and check for builder errors
