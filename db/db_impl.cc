@@ -539,6 +539,13 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
   stats_[level].Add(stats);
+  // since we only have one level
+  // therefore we may schedule compaction for every sst file
+  manual_compaction_ = new ManualCompaction();
+  manual_compaction_->level = 0;
+  manual_compaction_->begin = nullptr;
+  manual_compaction_->end = nullptr;
+  MaybeScheduleCompaction();
   return s;
 }
 
@@ -580,7 +587,8 @@ void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
   {
     MutexLock l(&mutex_);
     Version* base = versions_->current();
-    for (int level = 1; level < config::kNumLevels; level++) {
+    // for (int level = 1; level < config::kNumLevels; level++) {
+    for (int level = 1; level < 1; level++) {
       if (base->OverlapInLevel(level, begin, end)) {
         max_level_with_files = level;
       }
@@ -730,7 +738,10 @@ void DBImpl::BackgroundCompaction() {
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
     c->edit()->DeleteFile(c->level(), f->number);
-    c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
+    // c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
+    //                   f->largest);
+    // Since we only have one level, we add level from the level 0
+    c->edit()->AddFile(c->level(), f->number, f->file_size, f->smallest,
                        f->largest);
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
@@ -879,7 +890,11 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
-    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+    // since we only have one level, compaction results will be written to
+    // level 0
+    // compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+    //                                      out.smallest, out.largest);
+    compact->compaction->edit()->AddFile(level, out.number, out.file_size,
                                          out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
@@ -914,6 +929,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
+  std::vector<std::vector<std::string>> key_to_update;
+  std::vector<uint64_t> new_file_ids;
   while (input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
     // Prioritize immutable compaction work
     if (has_imm_.load(std::memory_order_relaxed)) {
@@ -986,6 +1003,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
         status = OpenCompactionOutputFile(compact);
+        // record the first output file
+        new_file_ids.push_back(compact->current_output()->number);
+        key_to_update.emplace_back();
         if (!status.ok()) {
           break;
         }
@@ -995,6 +1015,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       }
       compact->current_output()->largest.DecodeFrom(key);
       compact->builder->Add(key, input->value());
+      // record the keys to update in the single level index
+      std::string current_key = key.ToString().substr(0, 16);
+      key_to_update.back().push_back(current_key);
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
@@ -1033,11 +1056,22 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
 
   mutex_.Lock();
-  stats_[compact->compaction->level() + 1].Add(stats);
+  // stats_[compact->compaction->level() + 1].Add(stats);
+  stats_[compact->compaction->level()].Add(stats);
 
   if (status.ok()) {
     status = InstallCompactionResults(compact);
+    // update single level index
+    for (int i = 0; i < new_file_ids.size(); i++) {
+      auto keys = key_to_update[i];
+      auto current_id = new_file_ids[i];
+      for (auto key : keys) {
+        slm_index.erase(key);
+        slm_index.emplace(key, current_id);
+      }
+    }
   }
+
   if (!status.ok()) {
     RecordBackgroundError(status);
   }
