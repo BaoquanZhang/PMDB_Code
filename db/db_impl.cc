@@ -1141,6 +1141,7 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
       // Done
     } else {
       s = current->Get(options, lkey, value, &stats);
+      //value = new std::string(slm_index[key.ToString()]);
       have_stat_update = true;
     }
     mutex_.Lock();

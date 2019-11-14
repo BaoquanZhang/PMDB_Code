@@ -11,10 +11,11 @@
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "leveldb/iterator.h"
+#include <iostream>
 
 namespace leveldb {
 
-  std::map< std::string, std::string > slm_index;
+  std::map<std::string, uint64_t> slm_index; // index for single-level merge db
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
@@ -31,12 +32,15 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
     }
 
     TableBuilder* builder = new TableBuilder(options, file);
+
     meta->smallest.DecodeFrom(iter->key());
     for (; iter->Valid(); iter->Next()) {
       Slice key = iter->key();
       meta->largest.DecodeFrom(key);
       builder->Add(key, iter->value());
-      slm_index.emplace(key.ToString(), fname);
+      // add every key-value pair into the index of single-level merge db
+      // std::cout << "emplace key" << key.ToString().substr(0,16) << std::endl;
+      slm_index.emplace(key.ToString().substr(0, 16), meta->number);
     }
 
     // Finish and check for builder errors

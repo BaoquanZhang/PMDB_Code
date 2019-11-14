@@ -20,7 +20,7 @@ namespace leveldb {
 static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
 
-extern std::map<std::string, std::string> slm_index;
+  extern std::map<std::string, uint64_t> slm_index;
 
 struct Options;
 struct ReadOptions;

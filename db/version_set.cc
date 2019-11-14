@@ -19,7 +19,7 @@
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 #include "util/logging.h"
-
+#include <iostream>
 namespace leveldb {
 
 static size_t TargetFileSize(const Options* options) {
@@ -283,11 +283,25 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                                  bool (*func)(void*, int, FileMetaData*)) {
   const Comparator* ucmp = vset_->icmp_.user_comparator();
 
+  // Identify the file number including the key from slm_index
+  // std::cout << "user_key:" << user_key.ToString() << std::endl;
+  uint64_t target_id = 0;
+  if (slm_index.find(user_key.ToString()) != slm_index.end()) {
+    target_id = slm_index[user_key.ToString()];
+  } else {
+    // std::cout << "can not find target id" << std::endl;
+  }
+
   // Search level-0 in order from newest to oldest.
+
   std::vector<FileMetaData*> tmp;
   tmp.reserve(files_[0].size());
   for (uint32_t i = 0; i < files_[0].size(); i++) {
     FileMetaData* f = files_[0][i];
+    // Check if the candidate file to search is the same with the
+    // target file from slm_index
+    if (f->number != target_id) continue;
+    // std::cout << "identify a file by target id" << std::endl;
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
       tmp.push_back(f);
@@ -306,7 +320,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   for (int level = 1; level < config::kNumLevels; level++) {
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
-
     // Binary search to find earliest index whose largest key >= internal_key.
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
