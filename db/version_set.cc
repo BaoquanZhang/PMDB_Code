@@ -45,6 +45,11 @@ static double MaxBytesForLevel(const Options* options, int level) {
 
   // Result for both level-0 and level-1
   double result = 10. * 1048576.0;
+  // Modify for one level
+  // we want all data store in one level
+  if (level == 1) {
+      result *= 1000000;
+  }
   while (level > 1) {
     result *= 10;
     level--;

@@ -35,7 +35,8 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
-
+#include <zconf.h>
+#include <iostream>
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -540,12 +541,14 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   stats.bytes_written = meta.file_size;
   stats_[level].Add(stats);
   // since we only have one level
-  // therefore we may schedule compaction for every sst file
+  // therefore we may schedule compaction for every sst files
+  /*
   manual_compaction_ = new ManualCompaction();
   manual_compaction_->level = 0;
   manual_compaction_->begin = nullptr;
   manual_compaction_->end = nullptr;
   MaybeScheduleCompaction();
+  */
   return s;
 }
 
@@ -587,8 +590,7 @@ void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
   {
     MutexLock l(&mutex_);
     Version* base = versions_->current();
-    // for (int level = 1; level < config::kNumLevels; level++) {
-    for (int level = 1; level < 1; level++) {
+    for (int level = 1; level < config::kNumLevels; level++) {
       if (base->OverlapInLevel(level, begin, end)) {
         max_level_with_files = level;
       }
@@ -706,6 +708,8 @@ void DBImpl::BackgroundCall() {
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
+  std::cout << "compacting" << std::endl;
+
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
@@ -738,10 +742,7 @@ void DBImpl::BackgroundCompaction() {
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
     c->edit()->DeleteFile(c->level(), f->number);
-    // c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
-    //                   f->largest);
-    // Since we only have one level, we add level from the level 0
-    c->edit()->AddFile(c->level(), f->number, f->file_size, f->smallest,
+     c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
                        f->largest);
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
@@ -890,12 +891,8 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
-    // since we only have one level, compaction results will be written to
-    // level 0
-    // compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
-    //                                      out.smallest, out.largest);
-    compact->compaction->edit()->AddFile(level, out.number, out.file_size,
-                                         out.smallest, out.largest);
+    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+                                          out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
@@ -1056,8 +1053,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
 
   mutex_.Lock();
-  // stats_[compact->compaction->level() + 1].Add(stats);
-  stats_[compact->compaction->level()].Add(stats);
+  stats_[compact->compaction->level() + 1].Add(stats);
 
   if (status.ok()) {
     status = InstallCompactionResults(compact);
@@ -1181,9 +1177,12 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     mutex_.Lock();
   }
 
+  // With only one level, we disable the seek compaction
+  /*
   if (have_stat_update && current->UpdateStats(stats)) {
     MaybeScheduleCompaction();
   }
+   */
   mem->Unref();
   if (imm != nullptr) imm->Unref();
   current->Unref();
