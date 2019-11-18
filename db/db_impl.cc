@@ -708,8 +708,6 @@ void DBImpl::BackgroundCall() {
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
-  std::cout << "compacting" << std::endl;
-
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
@@ -1012,9 +1010,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       }
       compact->current_output()->largest.DecodeFrom(key);
       compact->builder->Add(key, input->value());
-      // record the keys to update in the single level index
-      std::string current_key = key.ToString().substr(0, 16);
-      key_to_update.back().push_back(current_key);
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
@@ -1057,15 +1052,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   if (status.ok()) {
     status = InstallCompactionResults(compact);
-    // update single level index
-    for (int i = 0; i < new_file_ids.size(); i++) {
-      auto keys = key_to_update[i];
-      auto current_id = new_file_ids[i];
-      for (auto key : keys) {
-        slm_index.erase(key);
-        slm_index.emplace(key, current_id);
-      }
-    }
   }
 
   if (!status.ok()) {
@@ -1171,7 +1157,6 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
       // Done
     } else {
       s = current->Get(options, lkey, value, &stats);
-      //value = new std::string(slm_index[key.ToString()]);
       have_stat_update = true;
     }
     mutex_.Lock();

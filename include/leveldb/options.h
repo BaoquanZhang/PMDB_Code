@@ -140,6 +140,15 @@ struct LEVELDB_EXPORT Options {
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
   const FilterPolicy* filter_policy = nullptr;
+
+  // Size ratio between two adjacent level > 1
+  size_t size_ratio = 10;
+
+  // Size ratio between level 1 and level 0
+  size_t level1_ratio = 1;
+
+  // If true, we will use the btree index
+  bool use_btree_index = false;
 };
 
 // Options that control read operations

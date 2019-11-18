@@ -21,6 +21,9 @@ static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
 
   extern std::map<std::string, uint64_t> slm_index;
+  extern uint64_t write_count;
+  extern uint64_t read_count;
+
 
 struct Options;
 struct ReadOptions;

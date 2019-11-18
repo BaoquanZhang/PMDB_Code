@@ -16,6 +16,8 @@
 namespace leveldb {
 
   std::map<std::string, uint64_t> slm_index; // index for single-level merge db
+  uint64_t write_count = 0;
+  uint64_t read_count = 0;
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
@@ -38,9 +40,13 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
       Slice key = iter->key();
       meta->largest.DecodeFrom(key);
       builder->Add(key, iter->value());
-      // add every key-value pair into the index of single-level merge db
       // std::cout << "emplace key" << key.ToString().substr(0,16) << std::endl;
-      slm_index.emplace(key.ToString().substr(0, 16), meta->number);
+      if (options.use_btree_index) {
+        // add every key-value pair into the index of single-level merge db
+        std::string real_key = key.ToString().substr(0, 16);
+        slm_index.erase(real_key);
+        slm_index.emplace(real_key, meta->number);
+      }
     }
 
     // Finish and check for builder errors

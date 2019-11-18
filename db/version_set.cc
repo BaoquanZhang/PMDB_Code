@@ -48,10 +48,10 @@ static double MaxBytesForLevel(const Options* options, int level) {
   // Modify for one level
   // we want all data store in one level
   if (level == 1) {
-      result *= 1000000;
+    result *= options->level1_ratio;
   }
   while (level > 1) {
-    result *= 10;
+    result *= options->size_ratio;
     level--;
   }
   return result;
@@ -289,12 +289,11 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   const Comparator* ucmp = vset_->icmp_.user_comparator();
 
   // Identify the file number including the key from slm_index
-  // std::cout << "user_key:" << user_key.ToString() << std::endl;
   uint64_t target_id = 0;
-  if (slm_index.find(user_key.ToString()) != slm_index.end()) {
+  if (slm_index.size() > 0 && slm_index.find(user_key.ToString()) != slm_index.end()) {
     target_id = slm_index[user_key.ToString()];
   } else {
-    // std::cout << "can not find target id" << std::endl;
+    std::cout << "can not find target id" << std::endl;
   }
 
   // Search level-0 in order from newest to oldest.
@@ -305,7 +304,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     FileMetaData* f = files_[0][i];
     // Check if the candidate file to search is the same with the
     // target file from slm_index
-    if (f->number != target_id) continue;
+    if (slm_index.size() > 0 && f->number != target_id) continue;
     // std::cout << "identify a file by target id" << std::endl;
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {

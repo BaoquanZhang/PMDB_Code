@@ -111,6 +111,15 @@ static bool FLAGS_reuse_logs = false;
 // Use the db with the following name.
 static const char* FLAGS_db = nullptr;
 
+// The size ratio between level 0 and level 1
+static uint64_t FLAGS_level1_ratio = 1;
+
+// The size ratio between levels (level > 1)
+static uint64_t FLAGS_size_ratio = 10;
+
+// If true, then use the btree index
+static bool FLAGS_use_btree_index = false;
+
 namespace leveldb {
 
 namespace {
@@ -689,6 +698,9 @@ class Benchmark {
     options.max_open_files = FLAGS_open_files;
     options.filter_policy = filter_policy_;
     options.reuse_logs = FLAGS_reuse_logs;
+    options.size_ratio = FLAGS_size_ratio;
+    options.level1_ratio = FLAGS_level1_ratio;
+    options.use_btree_index = FLAGS_use_btree_index;
     Status s = DB::Open(options, FLAGS_db, &db_);
     if (!s.ok()) {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());
@@ -958,6 +970,12 @@ int main(int argc, char** argv) {
       FLAGS_bloom_bits = n;
     } else if (sscanf(argv[i], "--open_files=%d%c", &n, &junk) == 1) {
       FLAGS_open_files = n;
+    } else if (sscanf(argv[i], "--size_ratio=%d%c", &n, &junk) == 1) {
+      FLAGS_size_ratio = n;
+    } else if (sscanf(argv[i], "--level1_ratio=%d%c", &n, &junk) == 1) {
+      FLAGS_level1_ratio = n;
+    } else if (sscanf(argv[i], "--use_btree_index=%d%c", &n, &junk) == 1) {
+      FLAGS_use_btree_index = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {
