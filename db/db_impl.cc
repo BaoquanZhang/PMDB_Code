@@ -178,6 +178,8 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
+  std::cout << "write_count: " << write_count << std::endl;
+  std::cout << "read_count: " << read_count << std::endl;
 }
 
 Status DBImpl::NewDB() {
