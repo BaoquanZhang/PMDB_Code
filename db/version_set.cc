@@ -305,7 +305,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     // Check if the candidate file to search is the same with the
     // target file from slm_index
     if (slm_index.size() > 0 && f->number != target_id) {
-      std::cout << "skip a file" << std::endl;
       continue;
     }
     read_count += f->file_size;
@@ -333,7 +332,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     if (index < num_files) {
       FileMetaData* f = files_[level][index];
       if (slm_index.size() > 0 && f->number != target_id) {
-        std::cout << "skip a file" << std::endl;
         continue;
       }
       read_count += f->file_size;
