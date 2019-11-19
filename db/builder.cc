@@ -16,8 +16,8 @@
 namespace leveldb {
 
   std::map<std::string, uint64_t> slm_index; // index for single-level merge db
-  uint64_t write_count = 0;
-  uint64_t read_count = 0;
+  std::atomic<uint64_t> write_count{0};
+  std::atomic<uint64_t> read_count{0};
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
@@ -53,7 +53,6 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
     s = builder->Finish();
     if (s.ok()) {
       meta->file_size = builder->FileSize();
-      write_count++;
       assert(meta->file_size > 0);
     }
     delete builder;

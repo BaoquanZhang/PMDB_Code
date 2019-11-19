@@ -536,6 +536,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     }
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
+    write_count++;
   }
 
   CompactionStats stats;
@@ -885,7 +886,9 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
       compact->compaction->num_input_files(0), compact->compaction->level(),
       compact->compaction->num_input_files(1), compact->compaction->level() + 1,
       static_cast<long long>(compact->total_bytes));
-  write_count += compact->outputs.size();
+  write_count += compact->compaction->num_input_files(0)
+                 + compact->compaction->num_input_files(1)
+                 + compact->outputs.size();
 
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
