@@ -305,6 +305,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     // Check if the candidate file to search is the same with the
     // target file from slm_index
     if (slm_index.size() > 0 && f->number != target_id) continue;
+    read_count += f->file_size;
     // std::cout << "identify a file by target id" << std::endl;
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
@@ -314,7 +315,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   if (!tmp.empty()) {
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
     for (uint32_t i = 0; i < tmp.size(); i++) {
-      read_count += tmp[i]->file_size;
       if (!(*func)(arg, 0, tmp[i])) {
         return;
       }

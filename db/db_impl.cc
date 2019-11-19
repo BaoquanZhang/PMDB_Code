@@ -885,6 +885,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
       compact->compaction->num_input_files(0), compact->compaction->level(),
       compact->compaction->num_input_files(1), compact->compaction->level() + 1,
       static_cast<long long>(compact->total_bytes));
+  write_count += compact->total_bytes;
 
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
@@ -995,12 +996,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->compaction->IsBaseLevelForKey(ikey.user_key),
         (int)last_sequence_for_key, (int)compact->smallest_snapshot);
 #endif
-
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
         status = OpenCompactionOutputFile(compact);
-        // record the first output file
+        // record the output file for single level index
         new_file_ids.push_back(compact->current_output()->number);
         key_to_update.emplace_back();
         if (!status.ok()) {
@@ -1012,6 +1012,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       }
       compact->current_output()->largest.DecodeFrom(key);
       compact->builder->Add(key, input->value());
+      // record the keys to update in the single level index
+      std::string current_key = key.ToString().substr(0, 16);
+      key_to_update.back().push_back(current_key);
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
@@ -1054,6 +1057,15 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   if (status.ok()) {
     status = InstallCompactionResults(compact);
+    // update single level index
+    for (int i = 0; i < new_file_ids.size(); i++) {
+      auto keys = key_to_update[i];
+      auto current_id = new_file_ids[i];
+      for (auto key : keys) {
+        slm_index.erase(key);
+        slm_index.emplace(key, current_id);
+      }
+    }
   }
 
   if (!status.ok()) {
