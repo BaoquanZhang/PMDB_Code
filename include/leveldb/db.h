@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <atomic>
 
 #include "leveldb/export.h"
 #include "leveldb/iterator.h"
