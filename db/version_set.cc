@@ -314,6 +314,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   if (!tmp.empty()) {
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
     for (uint32_t i = 0; i < tmp.size(); i++) {
+      read_count += tmp[i]->file_size;
       if (!(*func)(arg, 0, tmp[i])) {
         return;
       }
