@@ -314,7 +314,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   if (!tmp.empty()) {
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
     for (uint32_t i = 0; i < tmp.size(); i++) {
-      if (slm_index.size() > 0 && tmp[i]->number != target_id) continue;
       read_count += tmp[i]->file_size;
       if (!(*func)(arg, 0, tmp[i])) {
         return;
@@ -330,6 +329,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
       FileMetaData* f = files_[level][index];
+      if (slm_index.size() > 0 && f->number != target_id) continue;
       read_count += f->file_size;
       if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
         // All of "f" is past any data for user_key
