@@ -304,7 +304,10 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     FileMetaData* f = files_[0][i];
     // Check if the candidate file to search is the same with the
     // target file from slm_index
-    if (slm_index.size() > 0 && f->number != target_id) continue;
+    if (slm_index.size() > 0 && f->number != target_id) {
+      continue;
+      std::cout << "skip a file" << std::endl;
+    }
     read_count += f->file_size;
     // std::cout << "identify a file by target id" << std::endl;
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
