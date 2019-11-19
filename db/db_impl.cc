@@ -885,7 +885,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
       compact->compaction->num_input_files(0), compact->compaction->level(),
       compact->compaction->num_input_files(1), compact->compaction->level() + 1,
       static_cast<long long>(compact->total_bytes));
-  write_count += compact->total_bytes;
+  write_count += compact->outputs.size();
 
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
