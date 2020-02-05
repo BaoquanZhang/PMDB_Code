@@ -181,6 +181,12 @@ DBImpl::~DBImpl() {
   }
   std::cout << "write_count: " << write_count << std::endl;
   std::cout << "read_count: " << read_count << std::endl;
+  /*
+  std::cout << "sst invalid keys:" << std::endl;
+  for (auto it = sst_live_ratio.begin(); it != sst_live_ratio.end(); it++) {
+    std::cout << it->first << ":" << it->second << std::endl;
+  }
+  */
 }
 
 Status DBImpl::NewDB() {

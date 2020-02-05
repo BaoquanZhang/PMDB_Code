@@ -19,7 +19,7 @@ namespace leveldb {
 std::atomic<uint64_t> write_count{0};
 std::atomic<uint64_t> read_count{0};
 btree_wrapper global_index;
-std::unordered_map<uint64_t, uint64_t> sst_size;
+std::unordered_map<uint64_t, uint64_t> sst_live_ratio;
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
@@ -82,8 +82,6 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
       // Verify that the table is usable
       Iterator* it = table_cache->NewIterator(ReadOptions(), meta->number,
                                               meta->file_size);
-      // record the file size
-      sst_size.emplace(meta->number, meta->file_size);
       s = it->status();
       delete it;
     }

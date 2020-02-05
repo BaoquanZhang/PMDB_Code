@@ -26,7 +26,7 @@ static const int kMinorVersion = 22;
 extern btree_wrapper global_index;
 extern std::atomic<uint64_t> write_count;
 extern std::atomic<uint64_t> read_count;
-extern std::unordered_map<uint64_t, uint64_t> sst_size;
+extern std::unordered_map<uint64_t, uint64_t> sst_live_ratio;
 
 
 struct Options;

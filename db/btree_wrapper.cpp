@@ -4,6 +4,9 @@
 
 #include "btree_wrapper.h"
 #include <iostream>
+
+#include "leveldb/db.h"
+
 namespace leveldb {
   bool btree_wrapper::findKey(std::string key, std::pair<uint64_t, uint64_t>& sst_offset) {
     auto it = global_tree.find(key);
@@ -19,7 +22,13 @@ namespace leveldb {
     // all keys after position will be shift
     std::pair<uint64_t, uint64_t> sst_offset(sst_id, block_offset);
     std::pair<const std::string, std::pair<uint64_t, uint64_t>> entry(key, sst_offset);
-    global_tree.insert(entry);
+    auto it = global_tree.find(key);
+    if (it != global_tree.end()) {
+      // update live ratio of sst
+      uint64_t sst_id = it->second.first;
+      sst_live_ratio[sst_id]++;
+    }
+    global_tree.insert(it, entry);
   }
 
   void btree_wrapper::insertKeys(std::vector<std::string> keys, std::vector<uint64_t> ssts,
