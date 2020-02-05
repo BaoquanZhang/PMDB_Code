@@ -113,6 +113,9 @@ class DBImpl : public DB {
   Status Recover(VersionEdit* edit, bool* save_manifest)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  // Get a key from a block directly using global index
+  Status GetFromBlock(const ReadOptions& options, const Slice& key, std::string* value);
+
   void MaybeIgnoreError(Status* s) const;
 
   // Delete any unneeded files and stale in-memory entries.

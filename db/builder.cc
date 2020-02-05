@@ -12,18 +12,26 @@
 #include "leveldb/env.h"
 #include "leveldb/iterator.h"
 #include <iostream>
+#include "btree_wrapper.h"
+#include <unordered_map>
 
 namespace leveldb {
-
-  std::map<std::string, uint64_t> slm_index; // index for single-level merge db
-  std::atomic<uint64_t> write_count{0};
-  std::atomic<uint64_t> read_count{0};
+std::atomic<uint64_t> write_count{0};
+std::atomic<uint64_t> read_count{0};
+btree_wrapper global_index;
+std::unordered_map<uint64_t, uint64_t> sst_size;
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
   Status s;
   meta->file_size = 0;
   iter->SeekToFirst();
+  // When we build table, we need to record <key, sst, block>
+  // so that we can update the global tree index. Therefore,
+  // we use three arrays to record them.
+  std::vector<std::string> keys;
+  std::vector<uint64_t> ssts;
+  std::vector<uint64_t> blocks;
 
   std::string fname = TableFileName(dbname, meta->number);
   if (iter->Valid()) {
@@ -39,13 +47,16 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
     for (; iter->Valid(); iter->Next()) {
       Slice key = iter->key();
       meta->largest.DecodeFrom(key);
-      builder->Add(key, iter->value());
-      // std::cout << "emplace key" << key.ToString().substr(0,16) << std::endl;
       if (options.use_btree_index) {
-        // add every key-value pair into the index of single-level merge db
+        // we can get key and sst here. However, we can not get
+        // block offset.
         std::string real_key = key.ToString().substr(0, 16);
-        slm_index.erase(real_key);
-        slm_index.emplace(real_key, meta->number);
+        keys.push_back(real_key);
+        ssts.push_back(meta->number);
+        // we have to enter table builder to find block offset
+        builder->Add(key, iter->value(), blocks);
+      } else {
+        builder->Add(key, iter->value());
       }
     }
 
@@ -71,6 +82,8 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
       // Verify that the table is usable
       Iterator* it = table_cache->NewIterator(ReadOptions(), meta->number,
                                               meta->file_size);
+      // record the file size
+      sst_size.emplace(meta->number, meta->file_size);
       s = it->status();
       delete it;
     }
@@ -83,6 +96,8 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
 
   if (s.ok() && meta->file_size > 0) {
     // Keep it
+    // We update the global tree index here
+    global_index.insertKeys(keys, ssts,blocks);
   } else {
     env->DeleteFile(fname);
   }

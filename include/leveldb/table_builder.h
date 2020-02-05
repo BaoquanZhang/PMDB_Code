@@ -50,6 +50,9 @@ class LEVELDB_EXPORT TableBuilder {
   // REQUIRES: key is after any previously added key according to comparator.
   // REQUIRES: Finish(), Abandon() have not been called
   void Add(const Slice& key, const Slice& value);
+  // Do the same thing with the above Add
+  // However, record block offset
+  void Add(const Slice& key, const Slice& value, std::vector<uint64_t>& blocks);
 
   // Advanced operation: flush any buffered key/value pairs to file.
   // Can be used to ensure that two adjacent entries never live in

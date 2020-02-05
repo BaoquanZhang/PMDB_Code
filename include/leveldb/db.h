@@ -10,10 +10,12 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <atomic>
+#include <db/btree_wrapper.h>
 
 #include "leveldb/export.h"
 #include "leveldb/iterator.h"
 #include "leveldb/options.h"
+#include <unordered_map>
 
 namespace leveldb {
 
@@ -21,9 +23,10 @@ namespace leveldb {
 static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
 
-  extern std::map<std::string, uint64_t> slm_index;
-  extern std::atomic<uint64_t> write_count;
-  extern std::atomic<uint64_t> read_count;
+extern btree_wrapper global_index;
+extern std::atomic<uint64_t> write_count;
+extern std::atomic<uint64_t> read_count;
+extern std::unordered_map<uint64_t, uint64_t> sst_size;
 
 
 struct Options;

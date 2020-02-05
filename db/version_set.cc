@@ -288,27 +288,13 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                                  bool (*func)(void*, int, FileMetaData*)) {
   const Comparator* ucmp = vset_->icmp_.user_comparator();
 
-  // Identify the file number including the key from slm_index
-  uint64_t target_id = 0;
-  if (slm_index.size() > 0 && slm_index.find(user_key.ToString()) != slm_index.end()) {
-    target_id = slm_index[user_key.ToString()];
-  } else {
-    std::cout << "can not find target id" << std::endl;
-  }
-
   // Search level-0 in order from newest to oldest.
 
   std::vector<FileMetaData*> tmp;
   tmp.reserve(files_[0].size());
   for (uint32_t i = 0; i < files_[0].size(); i++) {
     FileMetaData* f = files_[0][i];
-    // Check if the candidate file to search is the same with the
-    // target file from slm_index
-    if (slm_index.size() > 0 && f->number != target_id) {
-      continue;
-    }
     read_count++;
-    // std::cout << "identify a file by target id" << std::endl;
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
       tmp.push_back(f);
@@ -331,9 +317,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
       FileMetaData* f = files_[level][index];
-      if (slm_index.size() > 0 && f->number != target_id) {
-        continue;
-      }
       read_count++;
       if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
         // All of "f" is past any data for user_key

@@ -1,0 +1,1 @@
+./build/db_bench --benchmarks=fillrandom,readrandom --use_btree_index=1 --compression_ratio=1 --value_size=512 --num=1000000 --bloom_bits=0 --write_buffer_size=8388608 --reads=100000 --db="/home/bzhang/pmdb_test"

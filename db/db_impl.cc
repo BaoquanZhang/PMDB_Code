@@ -37,6 +37,7 @@
 #include "util/mutexlock.h"
 #include <zconf.h>
 #include <iostream>
+#include "table/format.h"
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -1060,15 +1061,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   if (status.ok()) {
     status = InstallCompactionResults(compact);
-    // update single level index
-    for (int i = 0; i < new_file_ids.size(); i++) {
-      auto keys = key_to_update[i];
-      auto current_id = new_file_ids[i];
-      for (auto key : keys) {
-        slm_index.erase(key);
-        slm_index.emplace(key, current_id);
-      }
-    }
   }
 
   if (!status.ok()) {
@@ -1141,6 +1133,63 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::string* value) {
+  // get file and offset from global index
+  std::string key_str = key.ToString().substr(0,16);
+  std::pair<uint64_t, uint64_t> sst_offset;
+  Status s;
+  if (global_index.findKey(key_str, sst_offset)) {
+    // find an entry in the global index
+    uint64_t file_size;
+    RandomAccessFile *file = nullptr;
+    std::string fname = TableFileName(dbname_, sst_offset.first);
+    s = env_->GetFileSize(fname, &file_size);
+
+    // get a file by its name
+    if (s.ok()) {
+      s = env_->NewRandomAccessFile(fname, &file);
+    }
+
+    if (!s.ok()) {
+      delete file;
+      return s;
+    }
+
+    // read a block in the file by its offset
+    // the content of the block will be stored in BlockContents
+    BlockHandle block_handle;
+    block_handle.set_offset(sst_offset.second);
+    block_handle.set_size(options_.block_size);
+    BlockContents block_contents;
+    s = ReadBlock(file, options, block_handle, &block_contents);
+    read_count++;
+    if (!s.ok()) {
+      return s;
+    }
+
+    // create a block in memory using the block content
+    Block* block = new Block(block_contents);
+
+    // Construct a block iterator for the block
+    auto block_iter = block->NewIterator(options_.comparator);
+
+    // Seek the key using the block iterator
+    block_iter->Seek(key);
+    if (block_iter->Valid() && block_iter->key().compare(key) == 0) {
+      // we find the key
+      const char* value_data = block_iter->value().data();
+      uint64_t value_size = block_iter->value().size();
+      value->assign(value_data, value_size);
+    }
+    s = block_iter->status();
+    // delete the block iterator after finishing using it
+    delete block_iter;
+    return s;
+  }
+
+  return Status::NotFound(key, "Not Found");
+}
+
 Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
@@ -1173,8 +1222,14 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
-      have_stat_update = true;
+      if (options_.use_btree_index) {
+        assert(global_index.size() > 0);
+        GetFromBlock(options, key, value);
+      } else {
+        // go to leveldb read routine
+        s = current->Get(options, lkey, value, &stats);
+        have_stat_update = true;
+      }
     }
     mutex_.Lock();
   }
