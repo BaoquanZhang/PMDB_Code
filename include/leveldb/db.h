@@ -7,16 +7,25 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <map>
 
 #include "leveldb/export.h"
 #include "leveldb/iterator.h"
 #include "leveldb/options.h"
+#include "db/interval_tree_wrapper.h"
 
 namespace leveldb {
 
 // Update CMakeLists.txt if you change these
 static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
+
+// Global index for intervals
+// l0_interval stores overlapped blocks flushed from memory
+extern interval_tree_wrapper l0_intervals;
+// disjoint range indexes the range on storage
+// Each range also includes overlapped blocks
+extern std::map<std::string, interval_tree_wrapper> disjoint_ranges;
 
 struct Options;
 struct ReadOptions;

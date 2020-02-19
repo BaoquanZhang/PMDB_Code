@@ -41,6 +41,11 @@ class BlockBuilder {
   // Return true iff no entries have been added since the last Reset()
   bool empty() const { return buffer_.empty(); }
 
+  // Return the first/last key
+  std::string FirstKey() { return first_key_; }
+
+  std::string LastKey() { return last_key_; }
+
  private:
   const Options* options_;
   std::string buffer_;              // Destination buffer
@@ -48,6 +53,7 @@ class BlockBuilder {
   int counter_;                     // Number of entries emitted since restart
   bool finished_;                   // Has Finish() been called?
   std::string last_key_;
+  std::string first_key_;
 };
 
 }  // namespace leveldb

@@ -30,6 +30,7 @@
 #include "leveldb/table_builder.h"
 #include "port/port.h"
 #include "table/block.h"
+#include "table/format.h"
 #include "table/merger.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
@@ -39,6 +40,8 @@
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
+interval_tree_wrapper l0_intervals;
+std::map<std::string, interval_tree_wrapper> disjoint_ranges;
 
 // Information kept for every waiting writer
 struct DBImpl::Writer {
@@ -813,7 +816,10 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   std::string fname = TableFileName(dbname_, file_number);
   Status s = env_->NewWritableFile(fname, &compact->outfile);
   if (s.ok()) {
-    compact->builder = new TableBuilder(options_, compact->outfile);
+    // TODO: We need to distinguish which interval tree we want to use.
+    // In a compaction, we want to use the interval tree in
+    // the disjoint ranges instead of the l0_intervals
+    compact->builder = new TableBuilder(options_, compact->outfile, file_number);
   }
   return s;
 }
@@ -1108,6 +1114,69 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::string* value) {
+  // get file and offset from global index
+  Status s = Status::NotFound(key, "Not Found");
+  // Search level-0 in order from newest to oldest.
+  // In the current level 0, we search the interval tree directly
+  std::string key_str(key.data(), key.size());
+  // For a single key, we use an interval with the same start
+  // and end key
+  auto targets = l0_intervals.find_overlap(key_str, key_str);
+  std::cout << "Targets size: " << targets.size() << std::endl;
+  for (int i = targets.size() - 1; i >= 0; i--) {
+    // search the blocks backwards to find the newest version
+    std::pair<uint64_t, std::pair<uint64_t, uint64_t>> sst_offset = targets[i];
+    // find an entry in the global index
+    uint64_t file_size;
+    RandomAccessFile *file = nullptr;
+    std::string fname = TableFileName(dbname_, sst_offset.first);
+    s = env_->GetFileSize(fname, &file_size);
+
+    // get a file by its name
+    if (s.ok()) {
+      s = env_->NewRandomAccessFile(fname, &file);
+    }
+
+    if (!s.ok()) {
+      delete file;
+      return s;
+    }
+
+    // read a block in the file by its offset
+    // the content of the block will be stored in BlockContents
+    BlockHandle block_handle;
+    block_handle.set_offset(sst_offset.second.first);
+    block_handle.set_size(sst_offset.second.second);
+    BlockContents block_contents;
+    s = ReadBlock(file, options, block_handle, &block_contents);
+    if (!s.ok()) {
+      return s;
+    }
+    // create a block in memory using the block content
+    Block* block = new Block(block_contents);
+    // Construct a block iterator for the block
+    auto block_iter = block->NewIterator(options_.comparator);
+    // Seek the key using the block iterator
+    block_iter->Seek(key);
+
+    if (block_iter->Valid()) {
+      if (block_iter->key().ToString().substr(0, 16) == key.ToString().substr(0, 16)) {
+        std::cout << "Find a key!" << std::endl;
+        const char *value_data = block_iter->value().data();
+        uint64_t value_size = block_iter->value().size();
+        value->assign(value_data, value_size);
+        s = block_iter->status();
+        delete block_iter;
+        return s;
+      }
+    }
+    // delete the block iterator after using it
+    delete block_iter;
+  }
+  return Status::NotFound(key, "Not Found");
+}
+
 Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
@@ -1122,13 +1191,13 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
 
   MemTable* mem = mem_;
   MemTable* imm = imm_;
-  Version* current = versions_->current();
+  //Version* current = versions_->current();
   mem->Ref();
   if (imm != nullptr) imm->Ref();
-  current->Ref();
+  //current->Ref();
 
-  bool have_stat_update = false;
-  Version::GetStats stats;
+  //bool have_stat_update = false;
+  //Version::GetStats stats;
 
   // Unlock while reading from files and memtables
   {
@@ -1140,18 +1209,19 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
-      have_stat_update = true;
+      // s = current->Get(options, lkey, value, &stats);
+      s = GetFromBlock(options, lkey.internal_key(), value);
+      // have_stat_update = true;
     }
     mutex_.Lock();
   }
 
-  if (have_stat_update && current->UpdateStats(stats)) {
-    MaybeScheduleCompaction();
-  }
+  //if (have_stat_update && current->UpdateStats(stats)) {
+  //  MaybeScheduleCompaction();
+  //}
   mem->Unref();
   if (imm != nullptr) imm->Unref();
-  current->Unref();
+  //current->Unref();
   return s;
 }
 

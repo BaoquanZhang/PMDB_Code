@@ -101,6 +101,10 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
   // Update state
   last_key_.resize(shared);
   last_key_.append(key.data() + shared, non_shared);
+  if (counter_ == 0) {
+    // first key
+    first_key_.assign(key.data(), key.size());
+  }
   assert(Slice(last_key_) == key);
   counter_++;
 }

@@ -5,6 +5,7 @@
 #include "leveldb/table_builder.h"
 
 #include <assert.h>
+#include <include/leveldb/db.h>
 
 #include "leveldb/comparator.h"
 #include "leveldb/env.h"
@@ -19,10 +20,11 @@
 namespace leveldb {
 
 struct TableBuilder::Rep {
-  Rep(const Options& opt, WritableFile* f)
+  Rep(const Options& opt, WritableFile* f, uint64_t fileid)
       : options(opt),
         index_block_options(opt),
         file(f),
+        file_id(fileid),
         offset(0),
         data_block(&options),
         index_block(&index_block_options),
@@ -38,6 +40,7 @@ struct TableBuilder::Rep {
   Options options;
   Options index_block_options;
   WritableFile* file;
+  uint64_t file_id;
   uint64_t offset;
   Status status;
   BlockBuilder data_block;
@@ -62,8 +65,8 @@ struct TableBuilder::Rep {
   std::string compressed_output;
 };
 
-TableBuilder::TableBuilder(const Options& options, WritableFile* file)
-    : rep_(new Rep(options, file)) {
+TableBuilder::TableBuilder(const Options& options, WritableFile* file, uint64_t fileid)
+    : rep_(new Rep(options, file, fileid)) {
   if (rep_->filter_block != nullptr) {
     rep_->filter_block->StartBlock(0);
   }
@@ -169,9 +172,47 @@ void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
       break;
     }
   }
-  WriteRawBlock(block_contents, type, handle);
+
+  // WriteRawBlock(block_contents, type, handle);
+  WriteRawBlock(
+      block->FirstKey(),
+      block->LastKey(),
+      block_contents,
+      type,
+      handle);
+
   r->compressed_output.clear();
   block->Reset();
+}
+
+void TableBuilder::WriteRawBlock(const Slice& block_start, const Slice& block_end,
+                                 const Slice& block_contents,
+                                 CompressionType type, BlockHandle* handle) {
+  Rep* r = rep_;
+  std::string block_start_str = block_start.ToString().substr(0, 16);
+  std::string block_end_str = block_end.ToString().substr(0, 16);
+  handle->set_offset(r->offset);
+  handle->set_size(block_contents.size());
+  r->status = r->file->Append(block_contents);
+  if (r->status.ok()) {
+    char trailer[kBlockTrailerSize];
+    trailer[0] = type;
+    uint32_t crc = crc32c::Value(block_contents.data(), block_contents.size());
+    crc = crc32c::Extend(crc, trailer, 1);  // Extend crc to cover block type
+    EncodeFixed32(trailer + 1, crc32c::Mask(crc));
+    r->status = r->file->Append(Slice(trailer, kBlockTrailerSize));
+    if (r->status.ok()) {
+      r->offset += block_contents.size() + kBlockTrailerSize;
+    }
+
+    // After write block, we update the interval tree
+    l0_intervals.add_interval(
+        block_start_str,
+        block_end_str,
+        r->file_id,
+        handle->offset(),
+        handle->size());
+  }
 }
 
 void TableBuilder::WriteRawBlock(const Slice& block_contents,
