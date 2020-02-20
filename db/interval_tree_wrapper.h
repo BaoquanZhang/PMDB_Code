@@ -10,7 +10,6 @@
 #include <iostream>
 #include <vector>
 
-
 class interval_tree_wrapper {
 public:
   /*

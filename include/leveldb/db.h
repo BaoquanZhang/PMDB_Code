@@ -5,10 +5,10 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_DB_H_
 #define STORAGE_LEVELDB_INCLUDE_DB_H_
 
-#include <stdint.h>
-#include <stdio.h>
+#include <atomic>
 #include <map>
 
+#include "db/bloomfilter.h"
 #include "leveldb/export.h"
 #include "leveldb/iterator.h"
 #include "leveldb/options.h"
@@ -26,6 +26,8 @@ extern interval_tree_wrapper l0_intervals;
 // disjoint range indexes the range on storage
 // Each range also includes overlapped blocks
 extern std::map<std::string, interval_tree_wrapper> disjoint_ranges;
+extern std::map<uint64_t, bloom_filter> sst_filter;
+extern std::atomic<uint64_t> block_reads;
 
 struct Options;
 struct ReadOptions;

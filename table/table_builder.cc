@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <include/leveldb/db.h>
+#include <db/bloomfilter.h>
 
 #include "leveldb/comparator.h"
 #include "leveldb/env.h"
@@ -49,6 +50,7 @@ struct TableBuilder::Rep {
   int64_t num_entries;
   bool closed;  // Either Finish() or Abandon() has been called.
   FilterBlockBuilder* filter_block;
+  std::vector<Slice> pending_keys;
 
   // We do not emit the index entry for a block until we have seen the
   // first key for the next data block.  This allows us to use shorter
@@ -118,6 +120,7 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
   r->data_block.Add(key, value);
+  r->pending_keys.push_back(key);
 
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
   if (estimated_block_size >= r->options.block_size) {
@@ -131,7 +134,7 @@ void TableBuilder::Flush() {
   if (!ok()) return;
   if (r->data_block.empty()) return;
   assert(!r->pending_index_entry);
-  WriteBlock(&r->data_block, &r->pending_handle);
+  WriteBlock(&r->data_block, &r->pending_handle, true);
   if (ok()) {
     r->pending_index_entry = true;
     r->status = r->file->Flush();
@@ -141,7 +144,7 @@ void TableBuilder::Flush() {
   }
 }
 
-void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
+void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle, bool isDataBlock) {
   // File format contains a sequence of blocks where each block has:
   //    block_data: uint8[n]
   //    type: uint8
@@ -173,13 +176,17 @@ void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
     }
   }
 
-  // WriteRawBlock(block_contents, type, handle);
-  WriteRawBlock(
-      block->FirstKey(),
-      block->LastKey(),
-      block_contents,
-      type,
-      handle);
+  if (isDataBlock) {
+    // We only update interval tree for data blocks.
+    WriteRawBlock(
+        block->FirstKey(),
+        block->LastKey(),
+        block_contents,
+        type,
+        handle);
+  } else {
+    WriteRawBlock(block_contents, type, handle);
+  }
 
   r->compressed_output.clear();
   block->Reset();
@@ -242,12 +249,25 @@ Status TableBuilder::Finish() {
   assert(!r->closed);
   r->closed = true;
 
+  // Create in-memory filter
+  bloom_parameters parameters;
+  parameters.projected_element_count = r->pending_keys.size();
+  parameters.false_positive_probability = 0.001;
+  parameters.random_seed = 0xA5A5A5A5;
+  parameters.compute_optimal_parameters();
+  sst_filter.emplace(r->file_id, parameters);
+  for (auto const& key : r->pending_keys) {
+    sst_filter[r->file_id].insert(key.ToString().substr(0, 16));
+  }
+
   BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
 
   // Write filter block
   if (ok() && r->filter_block != nullptr) {
-    WriteRawBlock(r->filter_block->Finish(), kNoCompression,
+    Slice filter_result = r->filter_block->Finish();
+    WriteRawBlock(filter_result, kNoCompression,
                   &filter_block_handle);
+
   }
 
   // Write metaindex block
@@ -263,7 +283,7 @@ Status TableBuilder::Finish() {
     }
 
     // TODO(postrelease): Add stats and other meta blocks
-    WriteBlock(&meta_index_block, &metaindex_block_handle);
+    WriteBlock(&meta_index_block, &metaindex_block_handle, false);
   }
 
   // Write index block
@@ -275,7 +295,7 @@ Status TableBuilder::Finish() {
       r->index_block.Add(r->last_key, Slice(handle_encoding));
       r->pending_index_entry = false;
     }
-    WriteBlock(&r->index_block, &index_block_handle);
+    WriteBlock(&r->index_block, &index_block_handle, false);
   }
 
   // Write footer

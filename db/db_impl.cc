@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "bloomfilter.h"
 #include "db/builder.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"
@@ -30,6 +31,7 @@
 #include "leveldb/table_builder.h"
 #include "port/port.h"
 #include "table/block.h"
+#include "table/filter_block.h"
 #include "table/format.h"
 #include "table/merger.h"
 #include "table/two_level_iterator.h"
@@ -42,6 +44,8 @@ namespace leveldb {
 const int kNumNonTableCacheFiles = 10;
 interval_tree_wrapper l0_intervals;
 std::map<std::string, interval_tree_wrapper> disjoint_ranges;
+std::map<uint64_t, bloom_filter> sst_filter;
+std::atomic<uint64_t> block_reads{0};
 
 // Information kept for every waiting writer
 struct DBImpl::Writer {
@@ -180,6 +184,7 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
+  std::cout << "block_reads: " << block_reads << std::endl;
 }
 
 Status DBImpl::NewDB() {
@@ -1119,18 +1124,22 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
   Status s = Status::NotFound(key, "Not Found");
   // Search level-0 in order from newest to oldest.
   // In the current level 0, we search the interval tree directly
-  std::string key_str(key.data(), key.size());
+  std::string key_str(key.ToString().substr(0, 16));
   // For a single key, we use an interval with the same start
   // and end key
   auto targets = l0_intervals.find_overlap(key_str, key_str);
-  std::cout << "Targets size: " << targets.size() << std::endl;
   for (int i = targets.size() - 1; i >= 0; i--) {
     // search the blocks backwards to find the newest version
     std::pair<uint64_t, std::pair<uint64_t, uint64_t>> sst_offset = targets[i];
     // find an entry in the global index
+    uint64_t file_id = sst_offset.first;
+    auto bloomfilters = sst_filter[file_id];
+    if (bloomfilters.size() > 0 && !bloomfilters.contains(key_str)) {
+      continue;
+    }
     uint64_t file_size;
     RandomAccessFile *file = nullptr;
-    std::string fname = TableFileName(dbname_, sst_offset.first);
+    std::string fname = TableFileName(dbname_, file_id);
     s = env_->GetFileSize(fname, &file_size);
 
     // get a file by its name
@@ -1150,6 +1159,7 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
     block_handle.set_size(sst_offset.second.second);
     BlockContents block_contents;
     s = ReadBlock(file, options, block_handle, &block_contents);
+    block_reads++;
     if (!s.ok()) {
       return s;
     }
@@ -1161,8 +1171,7 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
     block_iter->Seek(key);
 
     if (block_iter->Valid()) {
-      if (block_iter->key().ToString().substr(0, 16) == key.ToString().substr(0, 16)) {
-        std::cout << "Find a key!" << std::endl;
+      if (block_iter->key().ToString().substr(0, 16) == key_str) {
         const char *value_data = block_iter->value().data();
         uint64_t value_size = block_iter->value().size();
         value->assign(value_data, value_size);

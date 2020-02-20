@@ -38,6 +38,7 @@ class FilterBlockBuilder {
   void StartBlock(uint64_t block_offset);
   void AddKey(const Slice& key);
   Slice Finish();
+  std::string GetResult() { return result_; }
 
  private:
   void GenerateFilter();
