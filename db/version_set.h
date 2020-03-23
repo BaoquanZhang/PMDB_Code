@@ -73,7 +73,7 @@ class Version {
   void AddIterators(const ReadOptions&, std::vector<Iterator*>* iters);
 
   Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
-             GetStats* stats);
+             GetStats* stats, uint64_t& mem_reads);
 
   // Adds "stats" into the current state.  Returns true if a new
   // compaction may need to be triggered, false otherwise.
@@ -96,6 +96,13 @@ class Version {
       const InternalKey* begin,  // nullptr means before all keys
       const InternalKey* end,    // nullptr means after all keys
       std::vector<FileMetaData*>* inputs);
+  /*
+   * Get Metadata for every file in files and store the metadata in
+   * input
+   * */
+  void GetInputsByFiles(uint64_t level,
+      const std::unordered_set<uint64_t>& files,
+      std::vector<FileMetaData*>& input);
 
   // Returns true iff some file in the specified level overlaps
   // some part of [*smallest_user_key,*largest_user_key].
@@ -128,7 +135,8 @@ class Version {
         file_to_compact_(nullptr),
         file_to_compact_level_(-1),
         compaction_score_(-1),
-        compaction_level_(-1) {}
+        compaction_level_(-1),
+        compact_interval_(nullptr) {}
 
   Version(const Version&) = delete;
   Version& operator=(const Version&) = delete;
@@ -142,7 +150,7 @@ class Version {
   // false, makes no more calls.
   //
   // REQUIRES: user portion of internal_key == user_key.
-  void ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
+  uint64_t ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                           bool (*func)(void*, int, FileMetaData*));
 
   VersionSet* vset_;  // VersionSet to which this Version belongs
@@ -162,6 +170,7 @@ class Version {
   // are initialized by Finalize().
   double compaction_score_;
   int compaction_level_;
+  std::shared_ptr<interval_tree_wrapper> compact_interval_;
 };
 
 class VersionSet {
@@ -232,6 +241,7 @@ class VersionSet {
   // Otherwise returns a pointer to a heap-allocated object that
   // describes the compaction.  Caller should delete the result.
   Compaction* PickCompaction();
+  Compaction* PickRangeCompaction();
 
   // Return a compaction object for compacting the range [begin,end] in
   // the specified level.  Returns nullptr if there is nothing in that
@@ -247,6 +257,7 @@ class VersionSet {
   // Create an iterator that reads over the compaction inputs for "*c".
   // The caller should delete the iterator when no longer needed.
   Iterator* MakeInputIterator(Compaction* c);
+  Iterator* MakeRangeInputIterator(Compaction* c);
 
   // Returns true iff some level needs a compaction.
   bool NeedsCompaction() const {
@@ -268,6 +279,8 @@ class VersionSet {
     char buffer[100];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
+  void GetRange(const std::vector<FileMetaData*>& inputs, InternalKey* smallest,
+                InternalKey* largest);
 
  private:
   class Builder;
@@ -279,14 +292,15 @@ class VersionSet {
 
   void Finalize(Version* v);
 
-  void GetRange(const std::vector<FileMetaData*>& inputs, InternalKey* smallest,
-                InternalKey* largest);
+  void RangeFinalize(Version* v);
+
 
   void GetRange2(const std::vector<FileMetaData*>& inputs1,
                  const std::vector<FileMetaData*>& inputs2,
                  InternalKey* smallest, InternalKey* largest);
 
   void SetupOtherInputs(Compaction* c);
+  void SetupOtherRangeInputs(Compaction* c);
 
   // Save current contents to *log
   Status WriteSnapshot(log::Writer* log);
@@ -357,6 +371,14 @@ class Compaction {
   // is successful.
   void ReleaseInputs();
 
+  std::shared_ptr<interval_tree_wrapper> get_interval_tree() {
+    return interval_tree_;
+  };
+
+  std::vector<std::vector<FileMetaData*>> get_inputs() {
+    return inputs_;
+  };
+
  private:
   friend class Version;
   friend class VersionSet;
@@ -369,7 +391,8 @@ class Compaction {
   VersionEdit edit_;
 
   // Each compaction reads inputs from "level_" and "level_+1"
-  std::vector<FileMetaData*> inputs_[2];  // The two sets of inputs
+  std::vector<std::vector<FileMetaData*>> inputs_;  // The two sets of inputs
+  uint64_t input_count;
 
   // State used to check for number of overlapping grandparent files
   // (parent == level_ + 1, grandparent == level_ + 2)
@@ -378,6 +401,8 @@ class Compaction {
   bool seen_key_;             // Some output key has been seen
   int64_t overlapped_bytes_;  // Bytes of overlap between current output
                               // and grandparent files
+
+  std::shared_ptr<interval_tree_wrapper> interval_tree_;
 
   // State for implementing IsBaseLevelForKey
 

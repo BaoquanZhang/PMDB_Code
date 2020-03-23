@@ -1,1 +1,11 @@
-./build/db_bench --benchmarks=fillrandom,readrandom --compression_ratio=1 --value_size=496 --num=1000000 --bloom_bits=10 --write_buffer_size=2097152 --reads=100 --db="/home/bzhang/pmdb_test"
+./build/db_bench \
+--benchmarks=fillrandom,readrandom \
+--histogram=0 \
+--compression_ratio=1 \
+--value_size=512 \
+--num=40000000 \
+--write_buffer_size=536870912 \
+--range_compaction_io=10 \
+--reads=4000000 \
+--partition_counts=128 \
+--db="/home/bzhang/pmdb_test/partition"

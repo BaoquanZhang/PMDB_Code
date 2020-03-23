@@ -99,6 +99,7 @@ configure_file(
 include_directories(
   "${PROJECT_BINARY_DIR}/include"
   "${PROJECT_SOURCE_DIR}"
+  #"/usr/local/include"
 )
 
 if(BUILD_SHARED_LIBS)
@@ -275,6 +276,8 @@ add_executable(leveldbutil
   "${PROJECT_SOURCE_DIR}/db/leveldbutil.cc"
 )
 target_link_libraries(leveldbutil leveldb)
+
+#target_link_libraries(leveldb libbf.a)
 
 if(LEVELDB_BUILD_TESTS)
   enable_testing()

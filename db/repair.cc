@@ -302,13 +302,13 @@ class Repairer {
     if (!s.ok()) {
       return;
     }
-    TableBuilder* builder = new TableBuilder(options_, file, next_file_number_);
+    TableBuilder* builder = new TableBuilder(options_, file, next_file_number_, nullptr);
 
     // Copy data.
     Iterator* iter = NewTableIterator(t.meta);
     int counter = 0;
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
-      builder->Add(iter->key(), iter->value());
+      builder->Add(iter->key(), iter->value(), iter->key().ToString().substr(0,16));
       counter++;
     }
     delete iter;
@@ -317,7 +317,7 @@ class Repairer {
     if (counter == 0) {
       builder->Abandon();  // Nothing to save
     } else {
-      s = builder->Finish();
+      s = builder->Finish(0);
       if (s.ok()) {
         t.meta.file_size = builder->FileSize();
       }

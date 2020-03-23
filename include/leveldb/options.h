@@ -140,6 +140,13 @@ struct LEVELDB_EXPORT Options {
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
   const FilterPolicy* filter_policy = nullptr;
+
+  // the number of the worst-case I/O to
+  // trigger a range compaction
+  size_t range_io_trigger = 10;
+
+  // the number of partitions in PMDB
+  size_t use_partitions = 0;
 };
 
 // Options that control read operations

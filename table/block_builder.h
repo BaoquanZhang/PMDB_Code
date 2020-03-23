@@ -19,8 +19,8 @@ class BlockBuilder {
  public:
   explicit BlockBuilder(const Options* options);
 
-  BlockBuilder(const BlockBuilder&) = delete;
-  BlockBuilder& operator=(const BlockBuilder&) = delete;
+  //BlockBuilder(const BlockBuilder&) = delete;
+  //BlockBuilder& operator=(const BlockBuilder&) = delete;
 
   // Reset the contents as if the BlockBuilder was just constructed.
   void Reset();
@@ -46,12 +46,23 @@ class BlockBuilder {
 
   std::string LastKey() { return last_key_; }
 
+  // set size and offset
+  // size and offset will only used for data block
+  void set_size(uint64_t cur_size) { size = cur_size; }
+  void set_offset(uint64_t pending_offset) {offset_in_file = pending_offset; }
+
+  // get size and offset
+  uint64_t Size() { return size; }
+  uint64_t Offset() { return offset_in_file; }
+
  private:
   const Options* options_;
   std::string buffer_;              // Destination buffer
   std::vector<uint32_t> restarts_;  // Restart points
   int counter_;                     // Number of entries emitted since restart
   bool finished_;                   // Has Finish() been called?
+  uint64_t offset_in_file;
+  uint64_t size;
   std::string last_key_;
   std::string first_key_;
 };

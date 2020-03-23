@@ -21,7 +21,10 @@
 namespace leveldb {
 
 struct TableBuilder::Rep {
-  Rep(const Options& opt, WritableFile* f, uint64_t fileid)
+  Rep(const Options& opt,
+      WritableFile* f,
+      uint64_t fileid,
+      std::shared_ptr<interval_tree_wrapper> intervalTree)
       : options(opt),
         index_block_options(opt),
         file(f),
@@ -36,21 +39,25 @@ struct TableBuilder::Rep {
                          : new FilterBlockBuilder(opt.filter_policy)),
         pending_index_entry(false) {
     index_block_options.block_restart_interval = 1;
+    interval_tree = intervalTree;
   }
 
   Options options;
   Options index_block_options;
   WritableFile* file;
   uint64_t file_id;
+  std::shared_ptr<interval_tree_wrapper> interval_tree;
   uint64_t offset;
   Status status;
   BlockBuilder data_block;
   BlockBuilder index_block;
+  std::string first_key;
   std::string last_key;
   int64_t num_entries;
   bool closed;  // Either Finish() or Abandon() has been called.
   FilterBlockBuilder* filter_block;
-  std::vector<Slice> pending_keys;
+  std::vector<std::string> pending_keys;
+  std::vector<BlockBuilder> pending_data_blocks;
 
   // We do not emit the index entry for a block until we have seen the
   // first key for the next data block.  This allows us to use shorter
@@ -67,8 +74,12 @@ struct TableBuilder::Rep {
   std::string compressed_output;
 };
 
-TableBuilder::TableBuilder(const Options& options, WritableFile* file, uint64_t fileid)
-    : rep_(new Rep(options, file, fileid)) {
+TableBuilder::TableBuilder(
+    const Options& options,
+    WritableFile* file,
+    uint64_t fileid,
+    std::shared_ptr<interval_tree_wrapper> intervalTree)
+    : rep_(new Rep(options, file, fileid, std::move(intervalTree))) {
   if (rep_->filter_block != nullptr) {
     rep_->filter_block->StartBlock(0);
   }
@@ -96,7 +107,7 @@ Status TableBuilder::ChangeOptions(const Options& options) {
   return Status::OK();
 }
 
-void TableBuilder::Add(const Slice& key, const Slice& value) {
+void TableBuilder::Add(const Slice& key, const Slice& value, const std::string& user_key) {
   Rep* r = rep_;
   assert(!r->closed);
   if (!ok()) return;
@@ -117,10 +128,13 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     r->filter_block->AddKey(key);
   }
 
+  if (r->num_entries == 0) {
+   r->first_key.assign(key.data(), key.size());
+  }
   r->last_key.assign(key.data(), key.size());
   r->num_entries++;
   r->data_block.Add(key, value);
-  r->pending_keys.push_back(key);
+  r->pending_keys.push_back(user_key);
 
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
   if (estimated_block_size >= r->options.block_size) {
@@ -144,7 +158,7 @@ void TableBuilder::Flush() {
   }
 }
 
-void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle, bool isDataBlock) {
+void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle, bool isData) {
   // File format contains a sequence of blocks where each block has:
   //    block_data: uint8[n]
   //    type: uint8
@@ -176,51 +190,18 @@ void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle, bool isD
     }
   }
 
-  if (isDataBlock) {
-    // We only update interval tree for data blocks.
-    WriteRawBlock(
-        block->FirstKey(),
-        block->LastKey(),
-        block_contents,
-        type,
-        handle);
-  } else {
-    WriteRawBlock(block_contents, type, handle);
+  if (isData) {
+    block->set_size(block_contents.size());
+    block->set_offset(r->offset);
+    r->pending_data_blocks.push_back(*block);
   }
+
+  WriteRawBlock(block_contents, type, handle);
 
   r->compressed_output.clear();
   block->Reset();
 }
 
-void TableBuilder::WriteRawBlock(const Slice& block_start, const Slice& block_end,
-                                 const Slice& block_contents,
-                                 CompressionType type, BlockHandle* handle) {
-  Rep* r = rep_;
-  std::string block_start_str = block_start.ToString().substr(0, 16);
-  std::string block_end_str = block_end.ToString().substr(0, 16);
-  handle->set_offset(r->offset);
-  handle->set_size(block_contents.size());
-  r->status = r->file->Append(block_contents);
-  if (r->status.ok()) {
-    char trailer[kBlockTrailerSize];
-    trailer[0] = type;
-    uint32_t crc = crc32c::Value(block_contents.data(), block_contents.size());
-    crc = crc32c::Extend(crc, trailer, 1);  // Extend crc to cover block type
-    EncodeFixed32(trailer + 1, crc32c::Mask(crc));
-    r->status = r->file->Append(Slice(trailer, kBlockTrailerSize));
-    if (r->status.ok()) {
-      r->offset += block_contents.size() + kBlockTrailerSize;
-    }
-
-    // After write block, we update the interval tree
-    l0_intervals.add_interval(
-        block_start_str,
-        block_end_str,
-        r->file_id,
-        handle->offset(),
-        handle->size());
-  }
-}
 
 void TableBuilder::WriteRawBlock(const Slice& block_contents,
                                  CompressionType type, BlockHandle* handle) {
@@ -243,22 +224,11 @@ void TableBuilder::WriteRawBlock(const Slice& block_contents,
 
 Status TableBuilder::status() const { return rep_->status; }
 
-Status TableBuilder::Finish() {
+Status TableBuilder::Finish(uint8_t level) {
   Rep* r = rep_;
   Flush();
   assert(!r->closed);
   r->closed = true;
-
-  // Create in-memory filter
-  bloom_parameters parameters;
-  parameters.projected_element_count = r->pending_keys.size();
-  parameters.false_positive_probability = 0.001;
-  parameters.random_seed = 0xA5A5A5A5;
-  parameters.compute_optimal_parameters();
-  sst_filter.emplace(r->file_id, parameters);
-  for (auto const& key : r->pending_keys) {
-    sst_filter[r->file_id].insert(key.ToString().substr(0, 16));
-  }
 
   BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
 
@@ -267,7 +237,6 @@ Status TableBuilder::Finish() {
     Slice filter_result = r->filter_block->Finish();
     WriteRawBlock(filter_result, kNoCompression,
                   &filter_block_handle);
-
   }
 
   // Write metaindex block
@@ -309,6 +278,57 @@ Status TableBuilder::Finish() {
     if (r->status.ok()) {
       r->offset += footer_encoding.size();
     }
+  }
+
+  // Create a range if we have no range yet
+  if (r->pending_keys.size() > 0) {
+    std::string last_key = r->pending_keys.back().substr(0, 16);
+    if (r->interval_tree == nullptr) {
+      if (level == 1) {
+        disjoint_ranges[last_key] =
+            std::make_shared<interval_tree_wrapper>();
+        r->interval_tree = disjoint_ranges[last_key];
+      } else {
+        partitions[last_key] = std::make_shared<interval_tree_wrapper>();
+        r->interval_tree = partitions[last_key];
+      }
+    }
+    if ( level == 0 && last_key > partitions.rbegin()->first) {
+      auto tmp_interval_tree = partitions.rbegin()->second;
+      partitions.erase(partitions.rbegin()->first);
+      partitions.emplace(last_key, tmp_interval_tree);
+    }
+
+    r->interval_tree->lock();
+    // add all data blocks
+    for (auto &data_block : r->pending_data_blocks) {
+      r->interval_tree->add_interval(data_block.FirstKey(),
+                                     data_block.LastKey(),
+                                     r->file_id,
+                                     data_block.Offset(),
+                                     data_block.Size());
+    }
+    // only add one table
+    //r->interval_tree->add_interval(r->first_key, r->last_key, r->file_id, 0, 0);
+    r->interval_tree->increase_overlap();
+
+
+    // Create in-memory filter
+    bloom_parameters parameters;
+    parameters.projected_element_count = r->pending_keys.size();
+    parameters.false_positive_probability = 0.001;
+    parameters.random_seed = 0xA5A5A5A5;
+    parameters.compute_optimal_parameters();
+    auto temp_filter = std::make_shared<bloom_filter>(parameters);
+    for (auto const &key : r->pending_keys) {
+      temp_filter->insert(key.data(), 16);
+    }
+    sst_filter.emplace(r->file_id, temp_filter);
+
+    r->interval_tree->unlock();
+    // clear pending data blocks and keys
+    r->pending_keys.clear();
+    r->pending_data_blocks.clear();
   }
   return r->status;
 }

@@ -13,6 +13,7 @@
 #include "db/dbformat.h"
 #include "db/log_writer.h"
 #include "db/snapshot.h"
+#include "version_set.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "port/port.h"
@@ -42,8 +43,11 @@ class DBImpl : public DB {
   Status Write(const WriteOptions& options, WriteBatch* updates) override;
   Status Get(const ReadOptions& options, const Slice& key,
              std::string* value) override;
-  Status GetFromBlock(
-      const ReadOptions& options, const Slice& key, std::string* value);
+  Status GetFromInterval(
+      const ReadOptions& options,
+      std::shared_ptr<interval_tree_wrapper> interval_tree,
+      const Slice& key,
+      std::string* value);
   Iterator* NewIterator(const ReadOptions&) override;
   const Snapshot* GetSnapshot() override;
   void ReleaseSnapshot(const Snapshot* snapshot) override;
@@ -73,6 +77,34 @@ class DBImpl : public DB {
   // bytes.
   void RecordReadSample(Slice key);
 
+  // display the contents of the current index
+  void display_index();
+
+  // get stats info
+  uint64_t get_mem_write() {
+    return stats_[0].mem_written;
+  }
+
+  uint64_t get_mem_read() {
+    return stats_[0].mem_read;
+  }
+
+  uint64_t get_storage_write() {
+    uint64_t total_write = 0;
+    for (const auto& stat : stats_) {
+      total_write += stat.bytes_written;
+    }
+    return total_write;
+  }
+
+  uint64_t get_storage_read() {
+    uint64_t total_read = 0;
+    for (const auto& stat : stats_) {
+      total_read += stat.bytes_read;
+    }
+    return total_read;
+  }
+
  private:
   friend class DB;
   struct CompactionState;
@@ -90,7 +122,8 @@ class DBImpl : public DB {
   // Per level compaction stats.  stats_[level] stores the stats for
   // compactions that produced data for the specified "level".
   struct CompactionStats {
-    CompactionStats() : micros(0), bytes_read(0), bytes_written(0) {}
+    CompactionStats() : micros(0), bytes_read(0), bytes_written(0),
+                        mem_written(0), mem_read(0) {}
 
     void Add(const CompactionStats& c) {
       this->micros += c.micros;
@@ -101,6 +134,9 @@ class DBImpl : public DB {
     int64_t micros;
     int64_t bytes_read;
     int64_t bytes_written;
+    int64_t mem_written;  // we store mem writes and reads
+                          // in the stats of level 0
+    int64_t mem_read;
   };
 
   Iterator* NewInternalIterator(const ReadOptions&,
@@ -118,7 +154,7 @@ class DBImpl : public DB {
   void MaybeIgnoreError(Status* s) const;
 
   // Delete any unneeded files and stale in-memory entries.
-  void DeleteObsoleteFiles() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void DeleteObsoleteFiles(std::shared_ptr<interval_tree_wrapper> interval_tree) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Compact the in-memory write buffer to disk.  Switches to a new
   // log-file/memtable and writes a new descriptor iff successful.
@@ -131,6 +167,8 @@ class DBImpl : public DB {
 
   Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status WriteLevel0Tables(MemTable* mem, VersionEdit* edit)
+  EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Status MakeRoomForWrite(bool force /* compact even if there is room? */)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -149,6 +187,8 @@ class DBImpl : public DB {
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Status OpenCompactionOutputFile(CompactionState* compact);
+  Status OpenCompactionOutputFile(CompactionState* compact,
+                                  std::shared_ptr<interval_tree_wrapper> interval_tree);
   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
   Status InstallCompactionResults(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -176,6 +216,8 @@ class DBImpl : public DB {
   port::Mutex mutex_;
   std::atomic<bool> shutting_down_;
   port::CondVar background_work_finished_signal_ GUARDED_BY(mutex_);
+  uint64_t partition_count_;
+  std::map<Slice, std::shared_ptr<MemTable>> mems_;
   MemTable* mem_;
   MemTable* imm_ GUARDED_BY(mutex_);  // Memtable being compacted
   std::atomic<bool> has_imm_;         // So bg thread can detect non-null imm_
@@ -205,6 +247,9 @@ class DBImpl : public DB {
   Status bg_error_ GUARDED_BY(mutex_);
 
   CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
+
+  // the nuumber of the worst-case search IOs to trigger range compaction
+  uint64_t range_io_trigger_;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

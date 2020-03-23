@@ -72,6 +72,12 @@ class LEVELDB_EXPORT WriteBatch {
   // Support for iterating over the contents of a batch.
   Status Iterate(Handler* handler) const;
 
+  std::string Data() { return rep_; }
+
+  void SetData(const std::string& data) {
+    rep_ = data;
+  }
+
  private:
   friend class WriteBatchInternal;
 

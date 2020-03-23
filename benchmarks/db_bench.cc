@@ -79,15 +79,15 @@ static bool FLAGS_histogram = false;
 
 // Number of bytes to buffer in memtable before compacting
 // (initialized to default value by "main")
-static int FLAGS_write_buffer_size = 0;
+static size_t FLAGS_write_buffer_size = 0;
 
 // Number of bytes written to each file.
 // (initialized to default value by "main")
-static int FLAGS_max_file_size = 0;
+static size_t FLAGS_max_file_size = 0;
 
 // Approximate size of user data packed per block (before compression.
 // (initialized to default value by "main")
-static int FLAGS_block_size = 0;
+static size_t FLAGS_block_size = 0;
 
 // Number of bytes to use as a cache of uncompressed data.
 // Negative means use default settings.
@@ -100,6 +100,9 @@ static int FLAGS_open_files = 0;
 // Negative means use default settings.
 static int FLAGS_bloom_bits = -1;
 
+// The worst-cast search I/Os to trigger a range compaction
+static int FLAGS_range_io = 10;
+
 // If true, do not destroy the existing database.  If you set this
 // flag and also specify a benchmark that wants a fresh database, that
 // benchmark will fail.
@@ -110,6 +113,8 @@ static bool FLAGS_reuse_logs = false;
 
 // Use the db with the following name.
 static const char* FLAGS_db = nullptr;
+
+static int FLAGS_partitions = 0;
 
 namespace leveldb {
 
@@ -527,11 +532,9 @@ class Benchmark {
         } else {
           delete db_;
           db_ = nullptr;
-          DestroyDB(FLAGS_db, Options());
           Open();
         }
       }
-
       if (method != nullptr) {
         RunBenchmark(num_threads, name, method);
       }
@@ -689,6 +692,8 @@ class Benchmark {
     options.max_open_files = FLAGS_open_files;
     options.filter_policy = filter_policy_;
     options.reuse_logs = FLAGS_reuse_logs;
+    options.use_partitions = FLAGS_partitions;
+    options.range_io_trigger = FLAGS_range_io;
     Status s = DB::Open(options, FLAGS_db, &db_);
     if (!s.ok()) {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());
@@ -702,6 +707,14 @@ class Benchmark {
       Open();
       thread->stats.FinishedSingleOp();
     }
+  }
+
+  void display_storage_nvm() {
+    std::cout << "Displaying storage and nvm reads/writes:" << std::endl;
+    std::cout << "NVM reads: " << db_->get_mem_read() << std::endl;
+    std::cout << "NVM writes: " << db_->get_mem_write() << std::endl;
+    std::cout << "Storage reads: " << db_->get_storage_read() << std::endl;
+    std::cout << "Storage writes: " << db_->get_storage_write() << std::endl;
   }
 
   void WriteSeq(ThreadState* thread) { DoWrite(thread, true); }
@@ -736,6 +749,7 @@ class Benchmark {
       }
     }
     thread->stats.AddBytes(bytes);
+    display_storage_nvm();
   }
 
   void ReadSequential(ThreadState* thread) {
@@ -780,6 +794,7 @@ class Benchmark {
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
+    display_storage_nvm();
   }
 
   void ReadMissing(ThreadState* thread) {
@@ -924,6 +939,7 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; i++) {
     double d;
     int n;
+    size_t large_n;
     char junk;
     if (leveldb::Slice(argv[i]).starts_with("--benchmarks=")) {
       FLAGS_benchmarks = argv[i] + strlen("--benchmarks=");
@@ -946,18 +962,22 @@ int main(int argc, char** argv) {
       FLAGS_threads = n;
     } else if (sscanf(argv[i], "--value_size=%d%c", &n, &junk) == 1) {
       FLAGS_value_size = n;
-    } else if (sscanf(argv[i], "--write_buffer_size=%d%c", &n, &junk) == 1) {
-      FLAGS_write_buffer_size = n;
-    } else if (sscanf(argv[i], "--max_file_size=%d%c", &n, &junk) == 1) {
-      FLAGS_max_file_size = n;
-    } else if (sscanf(argv[i], "--block_size=%d%c", &n, &junk) == 1) {
-      FLAGS_block_size = n;
+    } else if (sscanf(argv[i], "--write_buffer_size=%ld%c", &large_n, &junk) == 1) {
+      FLAGS_write_buffer_size = large_n;
+    } else if (sscanf(argv[i], "--max_file_size=%ld%c", &large_n, &junk) == 1) {
+      FLAGS_max_file_size = large_n;
+    } else if (sscanf(argv[i], "--block_size=%ld%c", &large_n, &junk) == 1) {
+      FLAGS_block_size = large_n;
     } else if (sscanf(argv[i], "--cache_size=%d%c", &n, &junk) == 1) {
       FLAGS_cache_size = n;
     } else if (sscanf(argv[i], "--bloom_bits=%d%c", &n, &junk) == 1) {
       FLAGS_bloom_bits = n;
     } else if (sscanf(argv[i], "--open_files=%d%c", &n, &junk) == 1) {
       FLAGS_open_files = n;
+    } else if (sscanf(argv[i], "--range_compaction_io=%d%c", &n, &junk) == 1) {
+      FLAGS_range_io = n;
+    } else if (sscanf(argv[i], "--partition_counts=%d%c", &n, &junk) == 1) {
+      FLAGS_partitions = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {

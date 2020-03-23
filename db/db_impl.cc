@@ -9,9 +9,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <set>
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "bloomfilter.h"
 #include "db/builder.h"
@@ -42,9 +45,11 @@
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
-interval_tree_wrapper l0_intervals;
-std::map<std::string, interval_tree_wrapper> disjoint_ranges;
-std::map<uint64_t, bloom_filter> sst_filter;
+std::map<std::string, std::shared_ptr<interval_tree_wrapper>> partitions;
+std::shared_ptr<interval_tree_wrapper> l0_intervals = std::make_shared<interval_tree_wrapper>();
+std::map<std::string, std::shared_ptr<interval_tree_wrapper>> disjoint_ranges;
+//std::unordered_map<uint64_t, Slice> sst_filter;
+std::unordered_map<uint64_t, std::shared_ptr<bloom_filter>> sst_filter;
 std::atomic<uint64_t> block_reads{0};
 
 // Information kept for every waiting writer
@@ -155,7 +160,9 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       background_compaction_scheduled_(false),
       manual_compaction_(nullptr),
       versions_(new VersionSet(dbname_, &options_, table_cache_,
-                               &internal_comparator_)) {}
+                               &internal_comparator_)),
+      range_io_trigger_(raw_options.range_io_trigger) {
+}
 
 DBImpl::~DBImpl() {
   // Wait for background work to finish.
@@ -228,7 +235,7 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
-void DBImpl::DeleteObsoleteFiles() {
+void DBImpl::DeleteObsoleteFiles(std::shared_ptr<interval_tree_wrapper> interval_tree) {
   mutex_.AssertHeld();
 
   if (!bg_error_.ok()) {
@@ -236,6 +243,8 @@ void DBImpl::DeleteObsoleteFiles() {
     // or may not have been committed, so we cannot safely garbage collect.
     return;
   }
+
+  std::unordered_set<uint64_t> delete_file_id_map;
 
   // Make a set of all of the live files
   std::set<uint64_t> live = pending_outputs_;
@@ -278,6 +287,7 @@ void DBImpl::DeleteObsoleteFiles() {
         files_to_delete.push_back(std::move(filename));
         if (type == kTableFile) {
           table_cache_->Evict(number);
+          delete_file_id_map.emplace(number);
         }
         Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type),
             static_cast<unsigned long long>(number));
@@ -289,6 +299,15 @@ void DBImpl::DeleteObsoleteFiles() {
   // have unique names which will not collide with newly created files and
   // are therefore safe to delete while allowing other threads to proceed.
   mutex_.Unlock();
+  if (interval_tree != nullptr) {
+    interval_tree->lock();
+    interval_tree->delete_by_file(delete_file_id_map);
+    interval_tree->unlock();
+  }
+  for (auto file_id : delete_file_id_map) {
+    sst_filter[file_id].reset();
+    sst_filter.erase(file_id);
+  }
   for (const std::string& filename : files_to_delete) {
     env_->DeleteFile(dbname_ + "/" + filename);
   }
@@ -459,7 +478,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     if (mem->ApproximateMemoryUsage() > options_.write_buffer_size) {
       compactions++;
       *save_manifest = true;
-      status = WriteLevel0Table(mem, edit, nullptr);
+      //std::cout << "writting multiple level 0 tables " << std::endl;
+      status = WriteLevel0Tables(mem, edit);
       mem->Unref();
       mem = nullptr;
       if (!status.ok()) {
@@ -536,9 +556,10 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   if (s.ok() && meta.file_size > 0) {
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
-    if (base != nullptr) {
-      level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
-    }
+    // We always writes memtable to level 0
+    //if (base != nullptr) {
+    //  level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
+    //}
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
   }
@@ -550,6 +571,55 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
+Status DBImpl::WriteLevel0Tables(MemTable* mem, VersionEdit* edit) {
+  mutex_.AssertHeld();
+  const uint64_t start_micros = env_->NowMicros();
+  CompactionStats stats;
+  Iterator* iter = mem->NewIterator();
+  int level = 0;
+  Status s;
+  iter->SeekToFirst();
+  while (iter->Valid()) {
+    FileMetaData meta;
+    meta.number = versions_->NewFileNumber();
+    pending_outputs_.insert(meta.number);
+    Log(options_.info_log, "Level-0 table #%llu: started",
+        (unsigned long long) meta.number);
+
+    {
+      mutex_.Unlock();
+      s = BuildTableForPartitions(dbname_, env_, options_, table_cache_, iter, &meta);
+      mutex_.Lock();
+    }
+
+    Log(options_.info_log, "Level-0 table #%llu: %lld bytes %s",
+        (unsigned long long) meta.number, (unsigned long long) meta.file_size,
+        s.ToString().c_str());
+    pending_outputs_.erase(meta.number);
+
+    if (!s.ok()) {
+      return s;
+    }
+
+    // Note that if file_size is zero, the file has been deleted and
+    // should not be added to the manifest.
+    if (s.ok() && meta.file_size > 0) {
+      edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
+                    meta.largest);
+    }
+    stats.micros = env_->NowMicros() - start_micros;
+    stats.bytes_written = meta.file_size;
+  }
+  delete iter;
+  stats_[level].Add(stats);
+  //std::cout << "partitions: ";
+  //for (auto& key_entry : partitions) {
+  //  std::cout << key_entry.first << " ";
+  //}
+  //std::cout << std::endl;
+  return s;
+}
+
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
@@ -558,7 +628,12 @@ void DBImpl::CompactMemTable() {
   VersionEdit edit;
   Version* base = versions_->current();
   base->Ref();
-  Status s = WriteLevel0Table(imm_, &edit, base);
+  Status s;
+  if (options_.use_partitions == 0) {
+    s = WriteLevel0Table(imm_, &edit, base);
+  } else {
+    s = WriteLevel0Tables(imm_, &edit);
+  }
   base->Unref();
 
   if (s.ok() && shutting_down_.load(std::memory_order_acquire)) {
@@ -577,7 +652,7 @@ void DBImpl::CompactMemTable() {
     imm_->Unref();
     imm_ = nullptr;
     has_imm_.store(false, std::memory_order_release);
-    DeleteObsoleteFiles();
+    DeleteObsoleteFiles(l0_intervals);
   } else {
     RecordBackgroundError(s);
   }
@@ -705,13 +780,11 @@ void DBImpl::BackgroundCall() {
 
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
-
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
   }
-
-  Compaction* c;
+  Compaction* c = nullptr;
   bool is_manual = (manual_compaction_ != nullptr);
   InternalKey manual_end;
   if (is_manual) {
@@ -727,37 +800,22 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
-    c = versions_->PickCompaction();
+    //c = versions_->PickCompaction();
+    c = versions_->PickRangeCompaction();
   }
 
   Status status;
   if (c == nullptr) {
     // Nothing to do
-  } else if (!is_manual && c->IsTrivialMove()) {
-    // Move file to next level
-    assert(c->num_input_files(0) == 1);
-    FileMetaData* f = c->input(0, 0);
-    c->edit()->DeleteFile(c->level(), f->number);
-    c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
-                       f->largest);
-    status = versions_->LogAndApply(c->edit(), &mutex_);
-    if (!status.ok()) {
-      RecordBackgroundError(status);
-    }
-    VersionSet::LevelSummaryStorage tmp;
-    Log(options_.info_log, "Moved #%lld to level-%d %lld bytes %s: %s\n",
-        static_cast<unsigned long long>(f->number), c->level() + 1,
-        static_cast<unsigned long long>(f->file_size),
-        status.ToString().c_str(), versions_->LevelSummary(&tmp));
   } else {
-    CompactionState* compact = new CompactionState(c);
+    auto compact = new CompactionState(c);
     status = DoCompactionWork(compact);
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
     CleanupCompaction(compact);
     c->ReleaseInputs();
-    DeleteObsoleteFiles();
+    DeleteObsoleteFiles(c->get_interval_tree());
   }
   delete c;
 
@@ -798,6 +856,8 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
     const CompactionState::Output& out = compact->outputs[i];
     pending_outputs_.erase(out.number);
   }
+  auto interval_tree = compact->compaction->get_interval_tree();
+  interval_tree->reset_overlap();
   delete compact;
 }
 
@@ -824,10 +884,40 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
     // TODO: We need to distinguish which interval tree we want to use.
     // In a compaction, we want to use the interval tree in
     // the disjoint ranges instead of the l0_intervals
-    compact->builder = new TableBuilder(options_, compact->outfile, file_number);
+    compact->builder = new TableBuilder(options_, compact->outfile, file_number, nullptr);
   }
   return s;
 }
+
+  Status DBImpl::OpenCompactionOutputFile(CompactionState* compact,
+      std::shared_ptr<interval_tree_wrapper> interval_tree) {
+    assert(compact != nullptr);
+    assert(compact->builder == nullptr);
+    uint64_t file_number;
+    {
+      mutex_.Lock();
+      file_number = versions_->NewFileNumber();
+      pending_outputs_.insert(file_number);
+      CompactionState::Output out;
+      out.number = file_number;
+      out.smallest.Clear();
+      out.largest.Clear();
+      compact->outputs.push_back(out);
+      mutex_.Unlock();
+    }
+
+    // Make the output file
+    std::string fname = TableFileName(dbname_, file_number);
+    Status s = env_->NewWritableFile(fname, &compact->outfile);
+    if (s.ok()) {
+      // TODO: We need to distinguish which interval tree we want to use.
+      // In a compaction, we want to use the interval tree in
+      // the disjoint ranges instead of the l0_intervals
+      compact->builder = new TableBuilder(
+          options_, compact->outfile, file_number, std::move(interval_tree));
+    }
+    return s;
+  }
 
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
@@ -842,7 +932,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
-    s = compact->builder->Finish();
+    s = compact->builder->Finish(1);
   } else {
     compact->builder->Abandon();
   }
@@ -880,23 +970,35 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   mutex_.AssertHeld();
-  Log(options_.info_log, "Compacted %d@%d + %d@%d files => %lld bytes",
-      compact->compaction->num_input_files(0), compact->compaction->level(),
-      compact->compaction->num_input_files(1), compact->compaction->level() + 1,
-      static_cast<long long>(compact->total_bytes));
+  //Log(options_.info_log, "Compacted %d@%d + %d@%d files => %lld bytes",
+  //    compact->compaction->num_input_files(0), compact->compaction->level(),
+  //    compact->compaction->num_input_files(1), compact->compaction->level() + 1,
+  //    static_cast<long long>(compact->total_bytes));
 
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
   const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
-    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+    compact->compaction->edit()->AddFile(1, out.number, out.file_size,
                                          out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
-
+void DBImpl::display_index() {
+  std::cout << "******DB Displaying index:******" << std::endl;
+  //std::cout << "L0 intervals: " << std::endl;
+  //l0_intervals->display_intervals();
+  std::cout << "Disjoint Ranges: " << std::endl;
+  for(auto& range : disjoint_ranges) {
+    std::cout << range.first << ": " << std::endl;
+    //range.second->display_intervals();
+  }
+  std::cout << "******DB Displaying Finished:******" << std::endl;
+}
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
+  //std::cout << "Before Compaction: " << std::endl;
+  //display_index();
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
@@ -914,12 +1016,14 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
   }
 
-  Iterator* input = versions_->MakeInputIterator(compact->compaction);
-
+  Iterator* input = versions_->MakeRangeInputIterator(compact->compaction);
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
 
   input->SeekToFirst();
+  // Find the first overlapped disjoint key range
+  std::string first_key = input->key().ToString().substr(0, 16);
+  auto cur_range = disjoint_ranges.lower_bound(first_key);
   Status status;
   ParsedInternalKey ikey;
   std::string current_user_key;
@@ -940,6 +1044,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     }
 
     Slice key = input->key();
+    /* This is only used for range compaction
     if (compact->compaction->ShouldStopBefore(key) &&
         compact->builder != nullptr) {
       status = FinishCompactionOutputFile(compact, input);
@@ -947,6 +1052,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         break;
       }
     }
+    */
 
     // Handle key/value, add to state, etc.
     bool drop = false;
@@ -994,10 +1100,29 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 #endif
 
     if (!drop) {
+      // Close output file if it is across the boundary
+      // of the current disjoint key range
+      if (cur_range != disjoint_ranges.end() && current_user_key > cur_range->first
+          && compact->builder != nullptr) {
+        status = FinishCompactionOutputFile(compact, input);
+        if (!status.ok()) {
+          std::cout << "Errors when finishing output file" << std::endl;
+          break;
+        }
+        cur_range = disjoint_ranges.lower_bound(current_user_key);
+      }
+
       // Open output file if necessary
       if (compact->builder == nullptr) {
-        status = OpenCompactionOutputFile(compact);
+
+        cur_range = disjoint_ranges.lower_bound(current_user_key);
+        if (cur_range != disjoint_ranges.end()) {
+          status = OpenCompactionOutputFile(compact, cur_range->second);
+        } else {
+          status = OpenCompactionOutputFile(compact, nullptr);
+        }
         if (!status.ok()) {
+          std::cout << "Errors when finishing output file" << std::endl;
           break;
         }
       }
@@ -1005,13 +1130,14 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
-      compact->builder->Add(key, input->value());
+      compact->builder->Add(key, input->value(), current_user_key);
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
         status = FinishCompactionOutputFile(compact, input);
         if (!status.ok()) {
+          std::cout << "Errors when finishing output file" << std::endl;
           break;
         }
       }
@@ -1034,9 +1160,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
-  for (int which = 0; which < 2; which++) {
-    for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
-      stats.bytes_read += compact->compaction->input(which, i)->file_size;
+  for (const auto& input : compact->compaction->get_inputs()) {
+    for (const auto& file : input) {
+      stats.bytes_read += file->file_size;
     }
   }
   for (size_t i = 0; i < compact->outputs.size(); i++) {
@@ -1054,6 +1180,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log, "compacted to: %s", versions_->LevelSummary(&tmp));
+  //std::cout << "after Compaction: " << std::endl;
+  //display_index();
   return status;
 }
 
@@ -1119,35 +1247,45 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
-Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::string* value) {
-  // get file and offset from global index
+Status DBImpl::GetFromInterval(
+    const ReadOptions& options,
+    std::shared_ptr<interval_tree_wrapper> interval_tree,
+    const Slice& key,
+    std::string* value) {
+  //auto start = std::chrono::high_resolution_clock::now();
   Status s = Status::NotFound(key, "Not Found");
-  // Search level-0 in order from newest to oldest.
-  // In the current level 0, we search the interval tree directly
-  std::string key_str(key.ToString().substr(0, 16));
+  std::string key_str = key.ToString().substr(0, 16);
+
   // For a single key, we use an interval with the same start
   // and end key
-  auto targets = l0_intervals.find_overlap(key_str, key_str);
-  for (int i = targets.size() - 1; i >= 0; i--) {
+  uint64_t cur_reads = 0;
+  //interval_tree->display_intervals();
+  auto targets = interval_tree->find_point(key_str);
+  //auto stop = std::chrono::high_resolution_clock::now();
+  //auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+  //std::cout << "find intervals: " << duration.count() << std::endl;
+  //std::cout << key_str << " Find targets: " << targets.size() << std::endl;
+
+  for (int64_t i = targets.size() - 1; i >= 0; i--) {
     // search the blocks backwards to find the newest version
-    std::pair<uint64_t, std::pair<uint64_t, uint64_t>> sst_offset = targets[i];
+    auto sst_offset = targets[i];
     // find an entry in the global index
-    uint64_t file_id = sst_offset.first;
-    auto bloomfilters = sst_filter[file_id];
-    if (bloomfilters.size() > 0 && !bloomfilters.contains(key_str)) {
+    uint64_t file_id = sst_offset.file_id_;
+    if (sst_filter.count(file_id) == 0
+        || !(sst_filter[file_id]->contains(key.data(), 16))) {
       continue;
     }
-    uint64_t file_size;
-    RandomAccessFile *file = nullptr;
     std::string fname = TableFileName(dbname_, file_id);
+    uint64_t file_size;
     s = env_->GetFileSize(fname, &file_size);
-
+    RandomAccessFile *file = nullptr;
     // get a file by its name
     if (s.ok()) {
       s = env_->NewRandomAccessFile(fname, &file);
     }
 
     if (!s.ok()) {
+      std::cout << "Read file failed!" << std::endl;
       delete file;
       return s;
     }
@@ -1155,11 +1293,13 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
     // read a block in the file by its offset
     // the content of the block will be stored in BlockContents
     BlockHandle block_handle;
-    block_handle.set_offset(sst_offset.second.first);
-    block_handle.set_size(sst_offset.second.second);
+    block_handle.set_offset(sst_offset.block_offset_);
+    block_handle.set_size(sst_offset.block_size_);
     BlockContents block_contents;
     s = ReadBlock(file, options, block_handle, &block_contents);
     block_reads++;
+    stats_[1].bytes_read+= block_handle.size();
+    cur_reads++;
     if (!s.ok()) {
       return s;
     }
@@ -1176,13 +1316,22 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
         uint64_t value_size = block_iter->value().size();
         value->assign(value_data, value_size);
         s = block_iter->status();
+        delete block;
+        delete file;
         delete block_iter;
+        //std::cout << "current block reads: " << cur_reads << std::endl;
         return s;
       }
     }
     // delete the block iterator after using it
+    delete file;
     delete block_iter;
+    delete block;
   }
+  //auto stop2 = std::chrono::high_resolution_clock::now();
+  //duration = std::chrono::duration_cast<std::chrono::microseconds>(stop2 - stop);
+  //std::cout << "Get key: " << duration.count() << std::endl;
+  //std::cout << "current block reads: " << cur_reads << std::endl;
   return Status::NotFound(key, "Not Found");
 }
 
@@ -1200,13 +1349,13 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
 
   MemTable* mem = mem_;
   MemTable* imm = imm_;
-  //Version* current = versions_->current();
+  Version* current = versions_->current();
   mem->Ref();
   if (imm != nullptr) imm->Ref();
-  //current->Ref();
+  current->Ref();
 
-  //bool have_stat_update = false;
-  //Version::GetStats stats;
+  bool have_stat_update = false;
+  Version::GetStats stats;
 
   // Unlock while reading from files and memtables
   {
@@ -1215,12 +1364,30 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
       // Done
+      stats_[0].mem_read += lkey.user_key().size() + value->size();
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
+      stats_[0].mem_read += lkey.user_key().size() + value->size();
       // Done
     } else {
-      // s = current->Get(options, lkey, value, &stats);
-      s = GetFromBlock(options, lkey.internal_key(), value);
-      // have_stat_update = true;
+      uint64_t mem_read = 0;
+      //s = current->Get(options, lkey, value, &stats, mem_read);
+      //stats_[0].mem_read += mem_read;
+      // get from l0
+      std::string key_str = lkey.internal_key().ToString().substr(0, 16);
+      auto partition = partitions.lower_bound(key_str);
+      partition->second->lock();
+      s = GetFromInterval(options, partition->second, lkey.internal_key(), value);
+      partition->second->unlock();
+      // get from disjoint range
+      if (!s.ok()) {
+        auto disjoint_it = disjoint_ranges.lower_bound(key_str);
+        if (disjoint_it != disjoint_ranges.end()) {
+          disjoint_it->second->lock();
+          s = GetFromInterval(options, disjoint_it->second, lkey.internal_key(), value);
+          disjoint_it->second->unlock();
+        }
+      }
+      have_stat_update = true;
     }
     mutex_.Lock();
   }
@@ -1277,6 +1444,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   w.batch = updates;
   w.sync = options.sync;
   w.done = false;
+  stats_[0].mem_written += w.batch->ApproximateSize();
 
   MutexLock l(&mutex_);
   writers_.push_back(&w);
@@ -1302,14 +1470,14 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // into mem_.
     {
       mutex_.Unlock();
-      status = log_->AddRecord(WriteBatchInternal::Contents(updates));
+      //status = log_->AddRecord(WriteBatchInternal::Contents(updates));
       bool sync_error = false;
-      if (status.ok() && options.sync) {
-        status = logfile_->Sync();
-        if (!status.ok()) {
-          sync_error = true;
-        }
-      }
+      //if (status.ok() && options.sync) {
+        //status = logfile_->Sync();
+        //if (!status.ok()) {
+          //sync_error = true;
+        //}
+      //}
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
       }
@@ -1408,7 +1576,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       s = bg_error_;
       break;
     } else if (allow_delay && versions_->NumLevelFiles(0) >=
-                                  config::kL0_SlowdownWritesTrigger) {
+                                  config::kL0_SlowdownWritesTrigger * options_.use_partitions) {
       // We are getting close to hitting a hard limit on the number of
       // L0 files.  Rather than delaying a single write by several
       // seconds when we hit the hard limit, start delaying each
@@ -1428,7 +1596,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
-    } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
+    } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger * options_.use_partitions) {
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
@@ -1453,6 +1621,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mem_ = new MemTable(internal_comparator_);
       mem_->Ref();
       force = false;  // Do not force another compaction if have room
+      //std::cout << "Displaying index before compaction" << std::endl;
+      //display_index();
       MaybeScheduleCompaction();
     }
   }
@@ -1585,7 +1755,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
     s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
   }
   if (s.ok()) {
-    impl->DeleteObsoleteFiles();
+    impl->DeleteObsoleteFiles(nullptr);
     impl->MaybeScheduleCompaction();
   }
   impl->mutex_.Unlock();

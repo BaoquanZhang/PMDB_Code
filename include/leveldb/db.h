@@ -7,6 +7,8 @@
 
 #include <atomic>
 #include <map>
+#include <memory>
+#include <unordered_map>
 
 #include "db/bloomfilter.h"
 #include "leveldb/export.h"
@@ -22,11 +24,13 @@ static const int kMinorVersion = 22;
 
 // Global index for intervals
 // l0_interval stores overlapped blocks flushed from memory
-extern interval_tree_wrapper l0_intervals;
+extern std::shared_ptr<interval_tree_wrapper> l0_intervals;
+extern std::map<std::string, std::shared_ptr<interval_tree_wrapper>> partitions;
 // disjoint range indexes the range on storage
 // Each range also includes overlapped blocks
-extern std::map<std::string, interval_tree_wrapper> disjoint_ranges;
-extern std::map<uint64_t, bloom_filter> sst_filter;
+extern std::map<std::string, std::shared_ptr<interval_tree_wrapper>> disjoint_ranges;
+extern std::unordered_map<uint64_t, std::shared_ptr<bloom_filter>> sst_filter;
+
 extern std::atomic<uint64_t> block_reads;
 
 struct Options;
@@ -70,6 +74,13 @@ class LEVELDB_EXPORT DB {
   DB& operator=(const DB&) = delete;
 
   virtual ~DB();
+
+  // get storage/nvm reads and writes
+  virtual uint64_t get_mem_write() = 0;
+  virtual uint64_t get_storage_write() = 0;
+  virtual uint64_t get_mem_read() = 0;
+  virtual uint64_t get_storage_read() = 0;
+
 
   // Set the database entry for "key" to "value".  Returns OK on success,
   // and a non-OK status on error.
