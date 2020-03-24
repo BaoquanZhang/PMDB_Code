@@ -492,6 +492,8 @@ class Benchmark {
         method = &Benchmark::ReadMissing;
       } else if (name == Slice("seekrandom")) {
         method = &Benchmark::SeekRandom;
+      } else if (name == Slice("rangerandom")) {
+        method = &Benchmark::RangeRandom;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -832,12 +834,41 @@ class Benchmark {
       snprintf(key, sizeof(key), "%016d", k);
       iter->Seek(key);
       if (iter->Valid() && iter->key() == key) found++;
+      int next_count = 0;
       delete iter;
       thread->stats.FinishedSingleOp();
     }
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
+  }
+
+  void RangeRandom(ThreadState* thread) {
+    ReadOptions options;
+    int found = 0;
+    for (int i = 0; i < 100; i++) {
+      Iterator* iter = db_->NewIterator(options);
+      char key[100];
+      const int k = thread->rand.Next() % FLAGS_num;
+      snprintf(key, sizeof(key), "%016d", k);
+      iter->Seek(key);
+      int next_count = 0;
+      while (iter->Valid() && next_count < 48) {
+        std::string cur_key;
+        std::string cur_val;
+        cur_key = iter->key().ToString();
+        cur_val = iter->value().ToString();
+        next_count++;
+        iter->Next();
+      }
+      found++;
+      delete iter;
+      thread->stats.FinishedSingleOp();
+    }
+    char msg[100];
+    snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
+    thread->stats.AddMessage(msg);
+    display_storage_nvm();
   }
 
   void DoDelete(ThreadState* thread, bool seq) {
