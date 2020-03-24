@@ -5,6 +5,7 @@
 #include "table/format.h"
 
 #include "leveldb/env.h"
+#include "leveldb/db.h"
 #include "port/port.h"
 #include "table/block.h"
 #include "util/coding.h"
@@ -66,6 +67,7 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
   result->data = Slice();
   result->cachable = false;
   result->heap_allocated = false;
+  block_read++;
 
   // Read the block contents as well as the type/crc footer.
   // See table_builder.cc for the code that built this structure.

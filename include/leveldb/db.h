@@ -18,6 +18,8 @@ namespace leveldb {
 static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
 
+extern uint64_t block_read;
+
 struct Options;
 struct ReadOptions;
 struct WriteOptions;
@@ -145,6 +147,9 @@ class LEVELDB_EXPORT DB {
   // Therefore the following call will compact the entire database:
   //    db->CompactRange(nullptr, nullptr);
   virtual void CompactRange(const Slice* begin, const Slice* end) = 0;
+
+  // get stats
+  virtual void display_read_write() = 0;
 };
 
 // Destroy the contents of the specified database.

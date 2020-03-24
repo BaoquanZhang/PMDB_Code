@@ -39,6 +39,7 @@
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
+uint64_t block_read = 0;
 
 // Information kept for every waiting writer
 struct DBImpl::Writer {

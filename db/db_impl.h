@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <deque>
+#include <iostream>
 #include <set>
 #include <string>
 
@@ -70,6 +71,20 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
+
+  void display_read_write() override {
+    uint64_t total_writes = 0;
+    uint64_t total_reads = 0;
+    mutex_.Lock();
+    for (int i = 0; i < config::kNumLevels; i++) {
+      total_reads += stats_[i].bytes_read;
+      total_writes += stats_[i].bytes_written;
+    }
+    mutex_.Unlock();
+    std::cout << "total writes: " << total_writes << std::endl;
+    std::cout << "total reads: " << total_reads << std::endl;
+    std::cout << "read blocks: " << block_read << std::endl;
+  }
 
  private:
   friend class DB;

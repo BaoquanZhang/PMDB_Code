@@ -111,6 +111,9 @@ static bool FLAGS_reuse_logs = false;
 // Use the db with the following name.
 static const char* FLAGS_db = nullptr;
 
+// range length
+static uint64_t FLAGS_range_len = 48;
+
 namespace leveldb {
 
 namespace {
@@ -487,6 +490,11 @@ class Benchmark {
         method = &Benchmark::ReadMissing;
       } else if (name == Slice("seekrandom")) {
         method = &Benchmark::SeekRandom;
+      } else if (name == Slice("shortrange")) {
+        method = &Benchmark::RangeRandom;
+      } else if (name == Slice("longrange")) {
+        FLAGS_range_len = 1000;
+        method = &Benchmark::RangeRandom;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -535,6 +543,7 @@ class Benchmark {
       if (method != nullptr) {
         RunBenchmark(num_threads, name, method);
       }
+      db_->display_read_write();
     }
   }
 
@@ -825,6 +834,30 @@ class Benchmark {
     thread->stats.AddMessage(msg);
   }
 
+  void RangeRandom(ThreadState* thread) {
+    ReadOptions options;
+    int found = 0;
+    for (int i = 0; i < reads_/FLAGS_range_len; i++) {
+      Iterator* iter = db_->NewIterator(options);
+      char key[100];
+      const int k = thread->rand.Next() % FLAGS_num;
+      snprintf(key, sizeof(key), "%016d", k);
+      iter->Seek(key);
+      int cur_len = 0;
+      while (iter->Valid() && cur_len <= FLAGS_range_len) {
+        iter->key();
+        iter->value();
+        cur_len++;
+      }
+      found++;
+      delete iter;
+      thread->stats.FinishedSingleOp();
+    }
+    char msg[100];
+    snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
+    thread->stats.AddMessage(msg);
+  }
+
   void DoDelete(ThreadState* thread, bool seq) {
     RandomGenerator gen;
     WriteBatch batch;
@@ -958,6 +991,8 @@ int main(int argc, char** argv) {
       FLAGS_bloom_bits = n;
     } else if (sscanf(argv[i], "--open_files=%d%c", &n, &junk) == 1) {
       FLAGS_open_files = n;
+    } else if (sscanf(argv[i], "--range_len=%d%c", &n, &junk) == 1) {
+      FLAGS_range_len = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {
