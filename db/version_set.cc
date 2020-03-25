@@ -303,7 +303,6 @@ uint64_t Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* a
   if (!tmp.empty()) {
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
     for (uint32_t i = 0; i < tmp.size(); i++) {
-      block_reads++;
       if (!(*func)(arg, 0, tmp[i])) {
         return mem_read;
       }
@@ -325,7 +324,6 @@ uint64_t Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* a
         break;
       } else {
         if (sst_filter[f->number]->contains(key_str)) {
-          block_reads++;
           if (!(*func)(arg, level, f)) {
             return mem_read;
           }

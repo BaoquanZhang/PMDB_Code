@@ -191,7 +191,6 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
-  std::cout << "block_reads: " << block_reads << std::endl;
 }
 
 Status DBImpl::NewDB() {
@@ -1297,8 +1296,6 @@ Status DBImpl::GetFromInterval(
     block_handle.set_size(sst_offset.block_size_);
     BlockContents block_contents;
     s = ReadBlock(file, options, block_handle, &block_contents);
-    block_reads++;
-    stats_[1].bytes_read+= block_handle.size();
     cur_reads++;
     if (!s.ok()) {
       return s;
@@ -1364,9 +1361,7 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
       // Done
-      stats_[0].mem_read += lkey.user_key().size() + value->size();
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
-      stats_[0].mem_read += lkey.user_key().size() + value->size();
       // Done
     } else {
       uint64_t mem_read = 0;
@@ -1444,7 +1439,6 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   w.batch = updates;
   w.sync = options.sync;
   w.done = false;
-  stats_[0].mem_written += w.batch->ApproximateSize();
 
   MutexLock l(&mutex_);
   writers_.push_back(&w);

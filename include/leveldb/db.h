@@ -80,6 +80,7 @@ class LEVELDB_EXPORT DB {
   virtual uint64_t get_storage_write() = 0;
   virtual uint64_t get_mem_read() = 0;
   virtual uint64_t get_storage_read() = 0;
+  virtual uint64_t get_block_reads() = 0;
 
 
   // Set the database entry for "key" to "value".  Returns OK on success,

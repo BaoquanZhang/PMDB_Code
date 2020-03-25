@@ -81,28 +81,43 @@ class DBImpl : public DB {
   void display_index();
 
   // get stats info
-  uint64_t get_mem_write() {
-    return stats_[0].mem_written;
+  uint64_t get_mem_write() override{
+    uint64_t mem_writes = 0;
+    mutex_.Lock();
+    mem_writes = stats_[0].mem_written;
+    mutex_.Unlock();
+    return mem_writes;
   }
 
-  uint64_t get_mem_read() {
-    return stats_[0].mem_read;
+  uint64_t get_mem_read() override {
+    uint64_t mem_reads = 0;
+    mutex_.Lock();
+    mem_reads = stats_[0].mem_read;
+    mutex_.Unlock();
+    return mem_reads;
   }
 
-  uint64_t get_storage_write() {
+  uint64_t get_storage_write() override {
     uint64_t total_write = 0;
+    mutex_.Lock();
     for (const auto& stat : stats_) {
       total_write += stat.bytes_written;
     }
+    mutex_.Unlock();
     return total_write;
   }
 
-  uint64_t get_storage_read() {
+  uint64_t get_storage_read() override {
     uint64_t total_read = 0;
+    mutex_.Lock();
     for (const auto& stat : stats_) {
       total_read += stat.bytes_read;
     }
+    mutex_.Unlock();
     return total_read;
+  }
+  uint64_t get_block_reads() override {
+    return block_reads;
   }
 
  private:

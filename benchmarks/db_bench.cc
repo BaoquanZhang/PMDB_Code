@@ -116,6 +116,9 @@ static const char* FLAGS_db = nullptr;
 
 static int FLAGS_partitions = 0;
 
+// the length of the range query
+static int FLAGS_range_len = 48;
+
 namespace leveldb {
 
 namespace {
@@ -492,7 +495,10 @@ class Benchmark {
         method = &Benchmark::ReadMissing;
       } else if (name == Slice("seekrandom")) {
         method = &Benchmark::SeekRandom;
-      } else if (name == Slice("rangerandom")) {
+      } else if (name == Slice("shortrange")) {
+        method = &Benchmark::RangeRandom;
+      } else if (name == Slice("longrange")) {
+        FLAGS_range_len = 1000;
         method = &Benchmark::RangeRandom;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
@@ -540,6 +546,7 @@ class Benchmark {
       if (method != nullptr) {
         RunBenchmark(num_threads, name, method);
       }
+      display_storage_nvm();
     }
   }
 
@@ -712,11 +719,10 @@ class Benchmark {
   }
 
   void display_storage_nvm() {
-    std::cout << "Displaying storage and nvm reads/writes:" << std::endl;
-    std::cout << "NVM reads: " << db_->get_mem_read() << std::endl;
-    std::cout << "NVM writes: " << db_->get_mem_write() << std::endl;
-    std::cout << "Storage reads: " << db_->get_storage_read() << std::endl;
+    std::cout << "Displaying storage reads/writes:" << std::endl;
     std::cout << "Storage writes: " << db_->get_storage_write() << std::endl;
+    std::cout << "Storage reads: " << db_->get_storage_read() << std::endl;
+    std::cout << "Block reads:" << db_->get_block_reads() << std::endl;
   }
 
   void WriteSeq(ThreadState* thread) { DoWrite(thread, true); }
@@ -751,7 +757,6 @@ class Benchmark {
       }
     }
     thread->stats.AddBytes(bytes);
-    display_storage_nvm();
   }
 
   void ReadSequential(ThreadState* thread) {
@@ -796,7 +801,6 @@ class Benchmark {
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
-    display_storage_nvm();
   }
 
   void ReadMissing(ThreadState* thread) {
@@ -846,14 +850,14 @@ class Benchmark {
   void RangeRandom(ThreadState* thread) {
     ReadOptions options;
     int found = 0;
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < reads_/FLAGS_range_len; i++) {
       Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
       iter->Seek(key);
       int next_count = 0;
-      while (iter->Valid() && next_count < 48) {
+      while (iter->Valid() && next_count < FLAGS_range_len) {
         std::string cur_key;
         std::string cur_val;
         cur_key = iter->key().ToString();
@@ -868,7 +872,6 @@ class Benchmark {
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
-    display_storage_nvm();
   }
 
   void DoDelete(ThreadState* thread, bool seq) {
@@ -1007,6 +1010,8 @@ int main(int argc, char** argv) {
       FLAGS_open_files = n;
     } else if (sscanf(argv[i], "--range_compaction_io=%d%c", &n, &junk) == 1) {
       FLAGS_range_io = n;
+    } else if (sscanf(argv[i], "--range_len=%d%c", &n, &junk) == 1) {
+      FLAGS_range_len = n;
     } else if (sscanf(argv[i], "--partition_counts=%d%c", &n, &junk) == 1) {
       FLAGS_partitions = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
