@@ -847,6 +847,7 @@ class Benchmark {
       while (iter->Valid() && cur_len <= FLAGS_range_len) {
         iter->key();
         iter->value();
+        iter->Next();
         cur_len++;
       }
       found++;
