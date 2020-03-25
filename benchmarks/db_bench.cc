@@ -845,8 +845,8 @@ class Benchmark {
       iter->Seek(key);
       int cur_len = 0;
       while (iter->Valid() && cur_len <= FLAGS_range_len) {
-        iter->key();
-        iter->value();
+        auto cur_key = iter->key();
+        auto cur_value = iter->value();
         iter->Next();
         cur_len++;
       }
