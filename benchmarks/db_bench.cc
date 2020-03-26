@@ -850,7 +850,7 @@ class Benchmark {
   void RangeRandom(ThreadState* thread) {
     ReadOptions options;
     int found = 0;
-    for (int i = 0; i < reads_/FLAGS_range_len; i++) {
+    for (int i = 0; i < reads_; i++) {
       Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
@@ -858,10 +858,8 @@ class Benchmark {
       iter->Seek(key);
       int next_count = 0;
       while (iter->Valid() && next_count < FLAGS_range_len) {
-        std::string cur_key;
-        std::string cur_val;
-        cur_key = iter->key().ToString();
-        cur_val = iter->value().ToString();
+        iter->key();
+        iter->value();
         next_count++;
         iter->Next();
       }
