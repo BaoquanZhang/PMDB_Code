@@ -15,6 +15,12 @@
 #ifndef STORAGE_LEVELDB_DB_VERSION_SET_H_
 #define STORAGE_LEVELDB_DB_VERSION_SET_H_
 
+/*
+#define LIVE_KEY_THRESHOLD 0.5
+#define LEAF_NODE_THRESHOLD 4
+#define SQUENTIALITY_DEGREE_THRESHOLD 4
+*/
+
 #include <map>
 #include <set>
 #include <vector>
@@ -38,6 +44,11 @@ class TableCache;
 class Version;
 class VersionSet;
 class WritableFile;
+
+port::Mutex mtx_;
+std::map<uint64_t,FileMetaData*> candidate_list_ssts GUARDED_BY(mtx_);
+//add meta file of sst which reach liveratio threshold to candidata list
+//void LiveKeyRatio(uint sst_id);
 
 // Return the smallest index i such that files[i]->largest >= key.
 // Return files.size() if there is no such file.
@@ -114,6 +125,10 @@ class Version {
   // Return a human readable string that describes this version's contents.
   std::string DebugString() const;
 
+  std::string GetLeafnodeKey() { return leafnode_scan_key;}
+  void SetLeafnodeKey(std::string* key) {leafnode_scan_key = *(key);}
+  std::vector<FileMetaData*>* filemeta(){return files_;}
+
  private:
   friend class Compaction;
   friend class VersionSet;
@@ -128,7 +143,8 @@ class Version {
         file_to_compact_(nullptr),
         file_to_compact_level_(-1),
         compaction_score_(-1),
-        compaction_level_(-1) {}
+        compaction_level_(-1),
+        leafnode_scan_key(nullptr){}
 
   Version(const Version&) = delete;
   Version& operator=(const Version&) = delete;
@@ -162,6 +178,9 @@ class Version {
   // are initialized by Finalize().
   double compaction_score_;
   int compaction_level_;
+
+  //the largest key we scanned last time
+  std::string leafnode_scan_key;
 };
 
 class VersionSet {
@@ -172,6 +191,14 @@ class VersionSet {
   VersionSet& operator=(const VersionSet&) = delete;
 
   ~VersionSet();
+
+  //add meta file of sst which reach liveratio threshold to candidata list
+  //void LiveKeyRatio(uint64_t sst_id);
+
+  //scan a fixed number of keys, if unique files exceed threshold,
+  // add all those files into candidata list
+  void LeafNodeScan();
+
 
   // Apply *edit to the current version to form a new descriptor that
   // is both saved to persistent state and installed as the new
@@ -233,6 +260,8 @@ class VersionSet {
   // describes the compaction.  Caller should delete the result.
   Compaction* PickCompaction();
 
+  Compaction* PickCandtListCompaction();
+
   // Return a compaction object for compacting the range [begin,end] in
   // the specified level.  Returns nullptr if there is nothing in that
   // level that overlaps the specified range.  Caller should delete
@@ -250,8 +279,11 @@ class VersionSet {
 
   // Returns true iff some level needs a compaction.
   bool NeedsCompaction() const {
+    /*
     Version* v = current_;
     return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
+    */
+   return (candidate_list_ssts.size()>candidate_list_size);
   }
 
   // Add all files listed in any live version to *live.
@@ -386,6 +418,8 @@ class Compaction {
   // higher level than the ones involved in this compaction (i.e. for
   // all L >= level_ + 2).
   size_t level_ptrs_[config::kNumLevels];
+
+  //std::vector<FileMetaData*> candidate_list_ssts;
 };
 
 }  // namespace leveldb

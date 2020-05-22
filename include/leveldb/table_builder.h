@@ -14,10 +14,12 @@
 #define STORAGE_LEVELDB_INCLUDE_TABLE_BUILDER_H_
 
 #include <stdint.h>
+#include <vector>
 
 #include "leveldb/export.h"
 #include "leveldb/options.h"
 #include "leveldb/status.h"
+#include "db/db_impl.h"
 
 namespace leveldb {
 
@@ -66,6 +68,8 @@ class LEVELDB_EXPORT TableBuilder {
   // Finish building the table.  Stops using the file passed to the
   // constructor after this function returns.
   // REQUIRES: Finish(), Abandon() have not been called
+  Status Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
+                                 std::vector<uint64_t> block_offset,std::vector<FileMetaData*>** files_);
   Status Finish();
 
   // Indicate that the contents of this builder should be abandoned.  Stops

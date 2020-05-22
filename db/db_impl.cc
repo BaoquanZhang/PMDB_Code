@@ -282,7 +282,7 @@ void DBImpl::DeleteObsoleteFiles() {
           table_cache_->Evict(number);
         }
         Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type),
-            static_cast<unsigned long long>(number));
+            static_cast<unsigned long l ong>(number));
       }
     }
   }
@@ -513,6 +513,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   mutex_.AssertHeld();
   const uint64_t start_micros = env_->NowMicros();
   FileMetaData meta;
+  std::vector<FileMetaData*>* files_ ;
+  files_ = versions_->current()->filemeta();
   meta.number = versions_->NewFileNumber();
   pending_outputs_.insert(meta.number);
   Iterator* iter = mem->NewIterator();
@@ -522,7 +524,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
-    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta,&files_);
     mutex_.Lock();
   }
 
@@ -557,8 +559,9 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   manual_compaction_->level = 0;
   manual_compaction_->begin = nullptr;
   manual_compaction_->end = nullptr;
-  MaybeScheduleCompaction();
+  
   */
+  MaybeScheduleCompaction();
   return s;
 }
 
@@ -705,6 +708,7 @@ void DBImpl::BackgroundCall() {
     // No more background work after a background error.
   } else {
     BackgroundCompaction();
+    versions_->LeafNodeScan();
   }
 
   background_compaction_scheduled_ = false;
@@ -739,7 +743,7 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
-    c = versions_->PickCompaction();
+    c = versions_->PickCandtListCompaction();
   }
 
   Status status;
@@ -839,6 +843,58 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
 }
 
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
+                                          Iterator* input,std::vector<std::string> keys, std::vector<uint64_t> ssts,
+                                 std::vector<uint64_t> block_offset) {
+  assert(compact != nullptr);
+  assert(compact->outfile != nullptr);
+  assert(compact->builder != nullptr);
+
+  const uint64_t output_number = compact->current_output()->number;
+  assert(output_number != 0);
+
+  // Check for iterator errors
+  Status s = input->status();
+  const uint64_t current_entries = compact->builder->NumEntries();
+  if (s.ok()) {
+    std::vector<FileMetaData*>* files_ ;
+    files_ = versions_->current()->filemeta();
+    s = compact->builder->Finish(keys,ssts,block_offset,&files_);
+  } else {
+    compact->builder->Abandon();
+  }
+  const uint64_t current_bytes = compact->builder->FileSize();
+  compact->current_output()->file_size = current_bytes;
+  compact->total_bytes += current_bytes;
+  delete compact->builder;
+  compact->builder = nullptr;
+
+  // Finish and check for file errors
+  if (s.ok()) {
+    s = compact->outfile->Sync();
+  }
+  if (s.ok()) {
+    s = compact->outfile->Close();
+  }
+  delete compact->outfile;
+  compact->outfile = nullptr;
+
+  if (s.ok() && current_entries > 0) {
+    // Verify that the table is usable
+    Iterator* iter =
+        table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);
+    s = iter->status();
+    delete iter;
+    if (s.ok()) {
+      Log(options_.info_log, "Generated table #%llu@%d: %lld keys, %lld bytes",
+          (unsigned long long)output_number, compact->compaction->level(),
+          (unsigned long long)current_entries,
+          (unsigned long long)current_bytes);
+    }
+  }
+  return s;
+}
+
+Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
   assert(compact != nullptr);
   assert(compact->outfile != nullptr);
@@ -851,6 +907,8 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
+    std::vector<FileMetaData*>* files_ ;
+    files_ = versions_->current()->filemeta();
     s = compact->builder->Finish();
   } else {
     compact->builder->Abandon();
@@ -902,7 +960,8 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
-    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+    //TODO() fixed level #
+    compact->compaction->edit()->AddFile(2, out.number, out.file_size,
                                           out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
@@ -937,7 +996,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
-  std::vector<std::vector<std::string>> key_to_update;
+  std::vector<std::string> key_to_update;
+  std::vector<uint64_t> block_offset;
   std::vector<uint64_t> new_file_ids;
   while (input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
     // Prioritize immutable compaction work
@@ -995,6 +1055,10 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         drop = true;
       }
 
+      //TODO() Compare the sst_id of the key and sst_id find from B+tree
+      //if they are not equal, then the key need to drop
+      uint64_t key_sid =  global_index.findSid(key.ToString().substr(0, 16));
+
       last_sequence_for_key = ikey.sequence;
     }
 #if 0
@@ -1009,27 +1073,33 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
-        status = OpenCompactionOutputFile(compact);
-        // record the output file for single level index
-        new_file_ids.push_back(compact->current_output()->number);
-        key_to_update.emplace_back();
+        status = OpenCompactionOutputFile(compact);      
         if (!status.ok()) {
           break;
         }
       }
+     
       if (compact->builder->NumEntries() == 0) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
       compact->builder->Add(key, input->value());
-      // record the keys to update in the single level index
+       // record the output file for single level index
       std::string current_key = key.ToString().substr(0, 16);
-      key_to_update.back().push_back(current_key);
+      new_file_ids.push_back(compact->current_output()->number);
+      key_to_update.emplace_back(current_key);
+      compact->builder->Add(key,input->value(),block_offset);
+      // record the keys to update in the single level index
+      //
+      //key_to_update.back().push_back(current_key);
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
-        status = FinishCompactionOutputFile(compact, input);
+        status = FinishCompactionOutputFile(compact, input,key_to_update,new_file_ids,block_offset);
+        new_file_ids.clear();
+        key_to_update.clear();
+        block_offset.clear();
         if (!status.ok()) {
           break;
         }

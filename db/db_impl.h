@@ -26,6 +26,10 @@ class Version;
 class VersionEdit;
 class VersionSet;
 
+btree_wrapper global_index;
+//std::unordered_map<uint64_t, uint64_t> sst_live_ratio;
+std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
+
 class DBImpl : public DB {
  public:
   DBImpl(const Options& options, const std::string& dbname);
@@ -72,6 +76,7 @@ class DBImpl : public DB {
   void RecordReadSample(Slice key);
 
  private:
+  friend class btree_wrapper;
   friend class DB;
   struct CompactionState;
   struct Writer;
@@ -150,7 +155,9 @@ class DBImpl : public DB {
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Status OpenCompactionOutputFile(CompactionState* compact);
-  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
+  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, std::vector<std::string> keys, std::vector<uint64_t> ssts,
+                                 std::vector<uint64_t> block_offsets);
+  Status DBImpl::FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
   Status InstallCompactionResults(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 

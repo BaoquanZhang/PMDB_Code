@@ -20,6 +20,7 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include <iostream>
+#include <limits>
 namespace leveldb {
 
 static size_t TargetFileSize(const Options* options) {
@@ -1301,6 +1302,74 @@ Compaction* VersionSet::PickCompaction() {
   return c;
 }
 
+  Compaction* VersionSet::PickCandtListCompaction(){
+  int list_size = candidate_list_ssts.size();
+  double overlap_ratio[list_size][list_size];
+  Compaction* c;
+  int level = 0;
+  c = new Compaction(options_, level);
+  std::vector<std::pair<int,std::vector<int> > > ssts;
+  std::vector<double> total_ratio;
+  //memset(overlap_ratio,-1,sizeof(overlap_ratio));
+  int i=0,j=0;
+  for(auto s = candidate_list_ssts.begin(); (s != candidate_list_ssts.end()) && (i < list_size); s++, i++){
+      total_ratio[i] = 0;
+      //ssts.push_back(s->first);
+      std::vector<int> overlap_ssts;
+      InternalKey s_largest = s->second->largest;
+      InternalKey s_smallest = s->second->smallest;
+      for(auto t = candidate_list_ssts.begin(); (t != candidate_list_ssts.end()) && (j < list_size); t++,j++){           
+            InternalKey t_largest =  t->second->largest;
+            InternalKey t_smallest = t->second->smallest;
+            InternalKey st_ll,st_ls,st_sl,st_ss;
+            //calculate overlap ratio
+            st_ll = (icmp_.Compare(s_largest.Encode(),t_largest.Encode())<0)?s_largest:t_largest;
+            st_ls = (icmp_.Compare(s_largest.Encode(),t_largest.Encode())<0)?t_largest:s_largest;
+            st_sl = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?s_smallest:t_smallest;
+            st_ss = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?t_smallest:s_smallest;
+
+            uint64_t int_ll =  atoi(st_ll.user_key().data());
+            uint64_t int_ls =  atoi(st_ls.user_key().data());
+            uint64_t int_sl =  atoi(st_sl.user_key().data());
+            uint64_t int_ss =  atoi(st_ss.user_key().data());
+            // (st_ls - st_sl)/(st_ll - st_ss)
+            overlap_ratio[i][j] =  (int_ls - int_sl)/(int_ll - int_ss); 
+            if(overlap_ratio[i][j] < 0){
+              overlap_ratio[i][j] = 0;
+            }else{
+              overlap_ssts.push_back(t->first);
+            }           
+          }
+          total_ratio[i] += overlap_ratio[i][j];
+          ssts.push_back(std::make_pair(s->first, overlap_ssts));
+  }
+  double max_overlap = 	std::numeric_limits<double>::min();
+  int max_idx = -1;
+  for(int i = 0; i < total_ratio.size(); i++){
+    if(total_ratio[i] > max_overlap){
+      max_overlap = total_ratio[i];
+      max_idx = i;
+    }
+  }
+  mtx_.Lock();
+  int sid = ssts[max_idx].first;
+  std::vector<int> sids = ssts[max_idx].second;
+  FileMetaData* f;
+  f = candidate_list_ssts[sid]; 
+  c->inputs_[0].push_back(f);
+  candidate_list_ssts.erase(candidate_list_ssts.find(sid));
+  assert(!c->inputs_[0].empty());
+  for(auto it = sids.begin(); it != sids.end(); it++){
+    f = candidate_list_ssts[(*it)];
+    c->inputs_[1].push_back(f);
+    candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
+  }
+  mtx_.Unlock();
+  c->input_version_ = current_;
+  c->input_version_->Ref();
+  return c;
+}
+
 // Finds the largest key in a vector of files. Returns true if files it not
 // empty.
 bool FindLargestKey(const InternalKeyComparator& icmp,
@@ -1474,6 +1543,32 @@ Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
   return c;
 }
 
+//scan all files to find meta data of sst_id
+//void VersionSet::LiveKeyRatio(uint64_t sst_id){
+ //in SLMDB config::kNumLevels=1
+  /*for (int level = 0; level < config::kNumLevels; level++){
+    for (size_t i = 0; i < current_->files_[level].size(); i++){
+      FileMetaData* f = current_->files_[level][i];
+      if(f->number == sst_id){
+        std::pair<uint64_t,FileMetaData*> file(sst_id,f);
+        candidate_list_ssts[sst_id]=f;
+        break;
+      }
+    }
+  }*/
+//   FileMetaData* f; //find meta data by sst_id
+//   //TODO()
+//   candidate_list_ssts[sst_id] = f;
+// }
+
+void VersionSet::LeafNodeScan(){
+  std::vector<FileMetaData*>* files_ ;
+  files_ = current_->filemeta();
+  std::string current_key = current_->GetLeafnodeKey();
+  std::string* next_key = global_index.scanLeafnode(current_key, scan_keynum,&files_);
+  current_->SetLeafnodeKey(next_key);
+}
+
 Compaction::Compaction(const Options* options, int level)
     : level_(level),
       max_output_file_size_(MaxFileSizeForLevel(options, level)),
@@ -1561,5 +1656,4 @@ void Compaction::ReleaseInputs() {
     input_version_ = nullptr;
   }
 }
-
 }  // namespace leveldb

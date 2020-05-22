@@ -203,7 +203,9 @@ class Repairer {
     FileMetaData meta;
     meta.number = next_file_number_++;
     Iterator* iter = mem->NewIterator();
-    status = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    std::vector<FileMetaData*>* files_ ;
+    files_ = versions_->current()->filemeta();
+    status = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta,&files_);
     delete iter;
     mem->Unref();
     mem = nullptr;

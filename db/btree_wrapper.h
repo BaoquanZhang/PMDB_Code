@@ -6,6 +6,8 @@
 #define LEVELDB_BTREE_WRAPPER_H
 
 #include "btree_map.h"
+#include "leveldb/status.h"
+#include <vector>
 
 /* btree wrapper function
  * We can wrap interfaces, e.g. adding NVM latency, adding
@@ -31,17 +33,22 @@ namespace leveldb {
      *  sst_id: the id of sst
      *  block_offset : the offset of block containing the key
      * */
-    void insertKey(std::string key, uint64_t sst_id, uint64_t block_offset);
+    void insertKey(std::string key, uint64_t sst_id, uint64_t block_offset,std::vector<FileMetaData*>** files_);
 
     void insertKeys(std::vector<std::string> keys,
         std::vector<uint64_t> ssts,
-        std::vector<uint64_t> blocks);
+        std::vector<uint64_t> blocks,
+        std::vector<FileMetaData*>** files_);
 
     /* Return the current size of whole index
      * */
     uint64_t size() {
       return global_tree.size();
     };
+
+    std::string* scanLeafnode(std::string cur_key, int num,std::vector<FileMetaData*>** files_);
+
+    uint64_t findSid(std::string key);
 
   private:
     btree::btree_map<std::string, std::pair<uint64_t, uint64_t>> global_tree;
