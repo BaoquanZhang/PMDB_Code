@@ -45,8 +45,8 @@ class Version;
 class VersionSet;
 class WritableFile;
 
-port::Mutex mtx_;
-std::map<uint64_t,FileMetaData*> candidate_list_ssts GUARDED_BY(mtx_);
+extern port::Mutex mtx_;
+extern std::map<uint64_t,FileMetaData*> candidate_list_ssts GUARDED_BY(mtx_);
 //add meta file of sst which reach liveratio threshold to candidata list
 //void LiveKeyRatio(uint sst_id);
 
@@ -126,7 +126,7 @@ class Version {
   std::string DebugString() const;
 
   std::string GetLeafnodeKey() { return leafnode_scan_key;}
-  void SetLeafnodeKey(std::string* key) {leafnode_scan_key = *(key);}
+  void SetLeafnodeKey(std::string key) {leafnode_scan_key = key;}
   std::vector<FileMetaData*>* filemeta(){return files_;}
 
  private:
@@ -283,7 +283,10 @@ class VersionSet {
     Version* v = current_;
     return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
     */
-   return (candidate_list_ssts.size()>candidate_list_size);
+    mtx_.Lock();
+    uint64_t current_candidate_size = candidate_list_ssts.size();
+    mtx_.Unlock();
+   return (current_candidate_size > candidate_list_size);
   }
 
   // Add all files listed in any live version to *live.

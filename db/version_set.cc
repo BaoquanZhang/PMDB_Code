@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "db/btree_wrapper.h"
 #include "db/filename.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
@@ -22,6 +23,9 @@
 #include <iostream>
 #include <limits>
 namespace leveldb {
+
+  port::Mutex mtx_;
+  std::map<uint64_t,FileMetaData*> candidate_list_ssts GUARDED_BY(mtx_);
 
 static size_t TargetFileSize(const Options* options) {
   return options->max_file_size;
@@ -1303,7 +1307,9 @@ Compaction* VersionSet::PickCompaction() {
 }
 
   Compaction* VersionSet::PickCandtListCompaction(){
-  int list_size = candidate_list_ssts.size();
+  int list_size = 0;
+  mtx_.Lock();
+  list_size = candidate_list_ssts.size();
   double overlap_ratio[list_size][list_size];
   Compaction* c;
   int level = 0;
@@ -1340,18 +1346,18 @@ Compaction* VersionSet::PickCompaction() {
               overlap_ssts.push_back(t->first);
             }           
           }
-          total_ratio[i] += overlap_ratio[i][j];
-          ssts.push_back(std::make_pair(s->first, overlap_ssts));
+
+      total_ratio[i] += overlap_ratio[i][j];
+      ssts.push_back(std::make_pair(s->first, overlap_ssts));
   }
   double max_overlap = 	std::numeric_limits<double>::min();
   int max_idx = -1;
-  for(int i = 0; i < total_ratio.size(); i++){
-    if(total_ratio[i] > max_overlap){
-      max_overlap = total_ratio[i];
-      max_idx = i;
+  for(int cur_ratio = 0; cur_ratio < total_ratio.size(); cur_ratio++){
+    if(total_ratio[cur_ratio] > max_overlap){
+      max_overlap = total_ratio[cur_ratio];
+      max_idx = cur_ratio;
     }
   }
-  mtx_.Lock();
   int sid = ssts[max_idx].first;
   std::vector<int> sids = ssts[max_idx].second;
   FileMetaData* f;
@@ -1565,7 +1571,7 @@ void VersionSet::LeafNodeScan(){
   std::vector<FileMetaData*>* files_ ;
   files_ = current_->filemeta();
   std::string current_key = current_->GetLeafnodeKey();
-  std::string* next_key = global_index.scanLeafnode(current_key, scan_keynum,&files_);
+  std::string next_key = global_index.scanLeafnode(current_key, scan_keynum,&files_);
   current_->SetLeafnodeKey(next_key);
 }
 

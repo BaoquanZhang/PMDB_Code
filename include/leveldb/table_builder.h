@@ -19,13 +19,13 @@
 #include "leveldb/export.h"
 #include "leveldb/options.h"
 #include "leveldb/status.h"
-#include "db/db_impl.h"
 
 namespace leveldb {
 
 class BlockBuilder;
 class BlockHandle;
 class WritableFile;
+struct FileMetaData;
 
 class LEVELDB_EXPORT TableBuilder {
  public:

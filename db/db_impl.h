@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 
+#include "db/btree_wrapper.h"
 #include "db/dbformat.h"
 #include "db/log_writer.h"
 #include "db/snapshot.h"
@@ -25,10 +26,6 @@ class TableCache;
 class Version;
 class VersionEdit;
 class VersionSet;
-
-btree_wrapper global_index;
-//std::unordered_map<uint64_t, uint64_t> sst_live_ratio;
-std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
 
 class DBImpl : public DB {
  public:
@@ -157,7 +154,7 @@ class DBImpl : public DB {
   Status OpenCompactionOutputFile(CompactionState* compact);
   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, std::vector<std::string> keys, std::vector<uint64_t> ssts,
                                  std::vector<uint64_t> block_offsets);
-  Status DBImpl::FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
+  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
   Status InstallCompactionResults(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 

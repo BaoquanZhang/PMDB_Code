@@ -6,7 +6,6 @@
 #define LEVELDB_BTREE_WRAPPER_H
 
 #include "btree_map.h"
-#include "leveldb/status.h"
 #include <vector>
 
 /* btree wrapper function
@@ -14,6 +13,9 @@
  * multiple keys, etc., in the corresponding functions
  * */
 namespace leveldb {
+
+  struct FileMetaData;
+
   class btree_wrapper {
   public:
     btree_wrapper() {};
@@ -46,7 +48,7 @@ namespace leveldb {
       return global_tree.size();
     };
 
-    std::string* scanLeafnode(std::string cur_key, int num,std::vector<FileMetaData*>** files_);
+    std::string scanLeafnode(std::string cur_key, int num,std::vector<FileMetaData*>** files_);
 
     uint64_t findSid(std::string key);
 

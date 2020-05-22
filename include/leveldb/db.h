@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <atomic>
-#include <db/btree_wrapper.h>
 
 #include "leveldb/export.h"
 #include "leveldb/iterator.h"
@@ -18,6 +17,7 @@
 #include <unordered_map>
 
 namespace leveldb {
+  class btree_wrapper;
 
 // Update CMakeLists.txt if you change these
 static const int kMajorVersion = 1;
@@ -27,7 +27,7 @@ extern btree_wrapper global_index;
 extern std::atomic<uint64_t> write_count;
 extern std::atomic<uint64_t> read_count;
 //extern std::unordered_map<uint64_t, uint64_t> sst_live_ratio;
-std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
+extern std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
 static const int liveratio_threshold = 2;
 static const int leafnodescan_threshold = 10;
 static const int candidate_list_size = 20;

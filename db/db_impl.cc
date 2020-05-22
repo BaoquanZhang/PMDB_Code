@@ -41,6 +41,7 @@
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
+std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
 
 // Information kept for every waiting writer
 struct DBImpl::Writer {
@@ -282,7 +283,7 @@ void DBImpl::DeleteObsoleteFiles() {
           table_cache_->Evict(number);
         }
         Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type),
-            static_cast<unsigned long l ong>(number));
+            static_cast<unsigned long long>(number));
       }
     }
   }
@@ -857,7 +858,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
     std::vector<FileMetaData*>* files_ ;
+    mutex_.Lock();
     files_ = versions_->current()->filemeta();
+    mutex_.Unlock();
     s = compact->builder->Finish(keys,ssts,block_offset,&files_);
   } else {
     compact->builder->Abandon();
@@ -908,7 +911,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
     std::vector<FileMetaData*>* files_ ;
+    mutex_.Lock();
     files_ = versions_->current()->filemeta();
+    mutex_.Unlock();
     s = compact->builder->Finish();
   } else {
     compact->builder->Abandon();

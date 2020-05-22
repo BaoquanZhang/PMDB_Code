@@ -20,10 +20,9 @@ std::atomic<uint64_t> write_count{0};
 std::atomic<uint64_t> read_count{0};
 btree_wrapper global_index;
 //std::unordered_map<uint64_t, uint64_t> sst_live_ratio;
-std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
-                  TableCache* table_cache, Iterator* iter, FileMetaData* meta,std::vector<FileMetaData*>** files_) {
+                  TableCache* table_cache, Iterator* iter, FileMetaData* meta, std::vector<FileMetaData*>** files_) {
   Status s;
   meta->file_size = 0;
   iter->SeekToFirst();

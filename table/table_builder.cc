@@ -6,6 +6,8 @@
 
 #include <assert.h>
 
+#include "db/btree_wrapper.h"
+#include "leveldb/db.h"
 #include "leveldb/comparator.h"
 #include "leveldb/env.h"
 #include "leveldb/filter_policy.h"
@@ -229,7 +231,7 @@ void TableBuilder::WriteRawBlock(const Slice& block_contents,
 
 Status TableBuilder::status() const { return rep_->status; }
 
-Status Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
+Status TableBuilder::Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
                                  std::vector<uint64_t> block_offset,std::vector<FileMetaData*>** files_) {
   
   global_index.insertKeys(keys,ssts,block_offset,files_);
