@@ -50,17 +50,17 @@ void interval_tree_wrapper::unlock() {
   mutex_.unlock();
 }
 
-uint64_t interval_tree_wrapper::delete_by_file(std::unordered_set<uint64_t>& files) {
+uint64_t interval_tree_wrapper::delete_by_file(const std::unordered_set<uint64_t>& files_to_delete) {
   uint64_t deleted_files = 0;
   auto all_intervals = intervals.intervals();
   for (const auto& cur_interval : all_intervals) {
     uint64_t file_id_in_target = cur_interval.value.file_id_;
-    if (files.count(file_id_in_target) > 0) {
+    if (files_to_delete.count(file_id_in_target) > 0) {
       intervals.remove(cur_interval);
       deleted_files++;
     }
   }
-  for (const auto& fileid :files) {
+  for (const auto& fileid : files_to_delete) {
     this->files.erase(fileid);
   }
   return deleted_files;

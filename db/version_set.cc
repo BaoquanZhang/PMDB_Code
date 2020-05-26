@@ -1103,6 +1103,7 @@ void VersionSet::RangeFinalize(Version* v) {
     }
   }
 
+  /*
   for (auto& range : disjoint_ranges) {
     int cur_score = range.second->get_max_overlap_count();
     if (cur_score > options_->range_io_trigger && cur_score > best_score) {
@@ -1112,6 +1113,7 @@ void VersionSet::RangeFinalize(Version* v) {
       //end_key.assign(range.first);
     }
   }
+  */
 
   v->compaction_level_ = best_level;
   v->compaction_score_ = best_score;
@@ -1395,12 +1397,14 @@ Compaction* VersionSet::PickRangeCompaction() {
   compaction->inputs_.resize(2);
   compaction->interval_tree_->lock();
   auto files = compaction->interval_tree_->get_files();
+  compaction->interval_tree_->add_files_to_delete(files);
   current_->GetInputsByFiles(level, files, compaction->inputs_[level]);
+  compaction->interval_tree_->reset_overlap();
   compaction->interval_tree_->unlock();
+  SetupOtherRangeInputs(compaction);
   if (compaction->inputs_[0].empty() && compaction->inputs_[1].empty()) {
     return nullptr;
   }
-  //SetupOtherRangeInputs(compaction);
   compaction->input_version_ = current_;
   compaction->input_version_->Ref();
   return compaction;
@@ -1552,9 +1556,9 @@ void VersionSet::SetupOtherRangeInputs(Compaction* c) {
     interval_tree->lock();
     if (interval_tree->get_max_overlap_count() >= options_->range_io_trigger) {
       auto files = interval_tree->get_files();
+      interval_tree->add_files_to_delete(files);
       current_->GetInputsByFiles(1, files, c->inputs_[1]);
       interval_tree->reset_overlap();
-      interval_tree->clear();
     }
     interval_tree->unlock();
     // we only compact a limited size

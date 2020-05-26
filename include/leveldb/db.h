@@ -30,6 +30,8 @@ extern std::map<std::string, std::shared_ptr<interval_tree_wrapper>> disjoint_ra
 extern std::unordered_map<uint64_t, std::shared_ptr<bloom_filter>> sst_filter;
 
 extern std::atomic<uint64_t> block_reads;
+extern std::atomic<uint64_t> block_writes;
+
 
 struct Options;
 struct ReadOptions;
@@ -79,6 +81,7 @@ class LEVELDB_EXPORT DB {
   virtual uint64_t get_mem_read() = 0;
   virtual uint64_t get_storage_read() = 0;
   virtual uint64_t get_block_reads() = 0;
+  virtual uint64_t get_block_writes() = 0;
 
 
   // Set the database entry for "key" to "value".  Returns OK on success,

@@ -191,6 +191,7 @@ void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle, bool isD
   }
 
   if (isData) {
+    block_writes++;
     block->set_size(block_contents.size());
     block->set_offset(r->offset);
     r->pending_data_blocks.push_back(*block);
@@ -293,11 +294,6 @@ Status TableBuilder::Finish(uint8_t level) {
         r->interval_tree = partitions[last_key];
       }
     }
-    if ( level == 0 && last_key > partitions.rbegin()->first) {
-      auto tmp_interval_tree = partitions.rbegin()->second;
-      partitions.erase(partitions.rbegin()->first);
-      partitions.emplace(last_key, tmp_interval_tree);
-    }
 
     r->interval_tree->lock();
     // add all data blocks
@@ -308,11 +304,7 @@ Status TableBuilder::Finish(uint8_t level) {
                                      data_block.Offset(),
                                      data_block.Size());
     }
-    // only add one table
-    //r->interval_tree->add_interval(r->first_key, r->last_key, r->file_id, 0, 0);
     r->interval_tree->increase_overlap();
-
-
     // Create in-memory filter
     bloom_parameters parameters;
     parameters.projected_element_count = r->pending_keys.size();

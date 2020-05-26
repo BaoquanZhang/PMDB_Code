@@ -49,6 +49,7 @@ std::map<std::string, std::shared_ptr<interval_tree_wrapper>> partitions;
 std::map<std::string, std::shared_ptr<interval_tree_wrapper>> disjoint_ranges;
 std::unordered_map<uint64_t, std::shared_ptr<bloom_filter>> sst_filter;
 std::atomic<uint64_t> block_reads{0};
+std::atomic<uint64_t> block_writes{0};
 
 // Information kept for every waiting writer
 struct DBImpl::Writer {
@@ -232,7 +233,7 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
-void DBImpl::DeleteObsoleteFiles(std::shared_ptr<interval_tree_wrapper> interval_tree) {
+void DBImpl::DeleteObsoleteFiles() {
   mutex_.AssertHeld();
 
   if (!bg_error_.ok()) {
@@ -296,11 +297,20 @@ void DBImpl::DeleteObsoleteFiles(std::shared_ptr<interval_tree_wrapper> interval
   // have unique names which will not collide with newly created files and
   // are therefore safe to delete while allowing other threads to proceed.
   mutex_.Unlock();
-  if (interval_tree != nullptr) {
-    interval_tree->lock();
-    interval_tree->delete_by_file(delete_file_id_map);
-    interval_tree->unlock();
+  for (const auto& partition : partitions) {
+    auto cur_partition_tree = partition.second;
+    cur_partition_tree->lock();
+    cur_partition_tree->do_delete_files();
+    cur_partition_tree->unlock();
   }
+
+  for (auto& range : disjoint_ranges) {
+    auto cur_range_tree = range.second;
+    cur_range_tree->lock();
+    cur_range_tree->do_delete_files();
+    cur_range_tree->unlock();
+  }
+
   for (auto file_id : delete_file_id_map) {
     sst_filter[file_id].reset();
     sst_filter.erase(file_id);
@@ -611,6 +621,7 @@ Status DBImpl::WriteLevel0Tables(MemTable* mem, VersionEdit* edit) {
 
     {
       mutex_.Unlock();
+      // TODO: iter will not change. Find a way to change iter
       s = BuildTableForPartitions(dbname_, env_, options_, table_cache_, iter, &meta);
       mutex_.Lock();
     }
@@ -675,7 +686,7 @@ void DBImpl::CompactMemTable() {
     imm_->Unref();
     imm_ = nullptr;
     has_imm_.store(false, std::memory_order_release);
-    DeleteObsoleteFiles(nullptr);
+    DeleteObsoleteFiles();
   } else {
     RecordBackgroundError(s);
   }
@@ -838,8 +849,7 @@ void DBImpl::BackgroundCompaction() {
     }
     CleanupCompaction(compact);
     c->ReleaseInputs();
-    DeleteObsoleteFiles(c->get_interval_tree());
-    c->get_interval_tree()->unlock();
+    DeleteObsoleteFiles();
   }
   delete c;
 
@@ -880,8 +890,6 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
     const CompactionState::Output& out = compact->outputs[i];
     pending_outputs_.erase(out.number);
   }
-  auto interval_tree = compact->compaction->get_interval_tree();
-  interval_tree->reset_overlap();
   delete compact;
 }
 
@@ -1001,7 +1009,6 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
 
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
-  const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
     compact->compaction->edit()->AddFile(1, out.number, out.file_size,
@@ -1138,7 +1145,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
       // Open output file if necessary
       if (compact->builder == nullptr) {
-
         cur_range = disjoint_ranges.lower_bound(current_user_key);
         if (cur_range != disjoint_ranges.end()) {
           status = OpenCompactionOutputFile(compact, cur_range->second);
@@ -1775,7 +1781,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
     s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
   }
   if (s.ok()) {
-    impl->DeleteObsoleteFiles(nullptr);
+    impl->DeleteObsoleteFiles();
     impl->MaybeScheduleCompaction();
   }
   impl->mutex_.Unlock();

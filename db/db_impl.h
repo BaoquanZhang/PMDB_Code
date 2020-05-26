@@ -119,6 +119,9 @@ class DBImpl : public DB {
   uint64_t get_block_reads() override {
     return block_reads;
   }
+  uint64_t get_block_writes() override {
+    return block_writes;
+  }
 
  private:
   friend class DB;
@@ -169,7 +172,7 @@ class DBImpl : public DB {
   void MaybeIgnoreError(Status* s) const;
 
   // Delete any unneeded files and stale in-memory entries.
-  void DeleteObsoleteFiles(std::shared_ptr<interval_tree_wrapper> interval_tree) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void DeleteObsoleteFiles() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Compact the in-memory write buffer to disk.  Switches to a new
   // log-file/memtable and writes a new descriptor iff successful.

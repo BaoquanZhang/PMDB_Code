@@ -13,6 +13,8 @@
 #include <map>
 #include <unordered_set>
 
+#include "port/thread_annotations.h"
+
 struct interval {
   interval(std::string start, std::string end) {
     start_ = start;
@@ -97,7 +99,7 @@ public:
    *  files: file ids to delete
    * @return: the number of deleted intervals
    * */
-  uint64_t delete_by_file(std::unordered_set<uint64_t>& files);
+  uint64_t delete_by_file(const std::unordered_set<uint64_t>& files);
 
   /*
    * Display all intervals
@@ -137,6 +139,17 @@ public:
     return is_split_;
   }
 
+  /* add files to delete */
+
+  void add_files_to_delete(const std::unordered_set<uint64_t>& files_to_delete) {
+    files_to_delete_.insert(files_to_delete.begin(), files_to_delete.end());
+  }
+
+  void do_delete_files() {
+    delete_by_file(files_to_delete_);
+    files_to_delete_.clear();
+  }
+
 private:
   //Intervals::IntervalTree<std::string, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> intervals;
   struct intervalComparator {
@@ -152,7 +165,7 @@ private:
   std::unordered_set<uint64_t> files;
   std::mutex mutex_;
   bool is_split_;
-
+  std::unordered_set<uint64_t> files_to_delete_;
 };
 
 #endif //LEVELDB_INTERVAL_TREE_WRAPPER_H
