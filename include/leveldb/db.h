@@ -22,9 +22,7 @@ namespace leveldb {
 static const int kMajorVersion = 1;
 static const int kMinorVersion = 22;
 
-// Global index for intervals
-// l0_interval stores overlapped blocks flushed from memory
-extern std::shared_ptr<interval_tree_wrapper> l0_intervals;
+// index for partitions
 extern std::map<std::string, std::shared_ptr<interval_tree_wrapper>> partitions;
 // disjoint range indexes the range on storage
 // Each range also includes overlapped blocks

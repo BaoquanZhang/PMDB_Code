@@ -28,7 +28,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
       return s;
     }
 
-    TableBuilder* builder = new TableBuilder(options, file, meta->number, l0_intervals);
+    TableBuilder* builder = new TableBuilder(options, file, meta->number, nullptr);
     meta->smallest.DecodeFrom(iter->key());
     for (; iter->Valid(); iter->Next()) {
       Slice key = iter->key();
@@ -80,7 +80,6 @@ Status BuildTableForPartitions(const std::string& dbname, Env* env, const Option
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
   Status s;
   meta->file_size = 0;
-  //iter->SeekToFirst();
   std::string fname = TableFileName(dbname, meta->number);
   if (iter->Valid()) {
     WritableFile* file;
@@ -90,28 +89,21 @@ Status BuildTableForPartitions(const std::string& dbname, Env* env, const Option
     }
     std::string star_key = iter->key().ToString().substr(0, 16);
     auto cur_partition = partitions.lower_bound(star_key);
+    assert(cur_partition != partitions.end());
     std::shared_ptr<TableBuilder> builder
            = std::make_shared<TableBuilder> (
                options,
                file,
                meta->number,
-               (cur_partition != partitions.end() ? cur_partition->second : nullptr));
+               cur_partition->second);
     meta->smallest.DecodeFrom(iter->key());
     for (; iter->Valid(); iter->Next()) {
       Slice key = iter->key();
       std::string tmp_key = key.ToString().substr(0, 16);
 
-      if (partitions.size() < options.use_partitions && options.use_partitions > 1) {
-        if ((builder->FileSize() >= options.max_file_size)) {
-          // add a partition and finish a table
-          break;
-        }
-      } else {
-        if (cur_partition != partitions.end()
-            && tmp_key > cur_partition->first
-            && cur_partition->first != partitions.rbegin()->first) {
-          break;
-        }
+      if( tmp_key > cur_partition->first) {
+        // next partition
+        break;
       }
 
       meta->largest.DecodeFrom(key);

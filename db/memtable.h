@@ -62,6 +62,9 @@ class MemTable {
   // Else, return false.
   bool Get(const LookupKey& key, std::string* value, Status* s);
 
+  // get total key count
+  uint64_t GetKeyCount() { return table_.GetNodeCount(); }
+
  private:
   friend class MemTableIterator;
   friend class MemTableBackwardIterator;

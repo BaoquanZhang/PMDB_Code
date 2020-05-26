@@ -1103,7 +1103,6 @@ void VersionSet::RangeFinalize(Version* v) {
     }
   }
 
-  /*
   for (auto& range : disjoint_ranges) {
     int cur_score = range.second->get_max_overlap_count();
     if (cur_score > options_->range_io_trigger && cur_score > best_score) {
@@ -1113,7 +1112,7 @@ void VersionSet::RangeFinalize(Version* v) {
       //end_key.assign(range.first);
     }
   }
-  */
+
   v->compaction_level_ = best_level;
   v->compaction_score_ = best_score;
   if (v->compact_interval_ == nullptr)
@@ -1401,7 +1400,7 @@ Compaction* VersionSet::PickRangeCompaction() {
   if (compaction->inputs_[0].empty() && compaction->inputs_[1].empty()) {
     return nullptr;
   }
-  SetupOtherRangeInputs(compaction);
+  //SetupOtherRangeInputs(compaction);
   compaction->input_version_ = current_;
   compaction->input_version_->Ref();
   return compaction;

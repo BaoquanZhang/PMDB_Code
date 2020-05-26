@@ -46,9 +46,7 @@ namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
 std::map<std::string, std::shared_ptr<interval_tree_wrapper>> partitions;
-std::shared_ptr<interval_tree_wrapper> l0_intervals = std::make_shared<interval_tree_wrapper>();
 std::map<std::string, std::shared_ptr<interval_tree_wrapper>> disjoint_ranges;
-//std::unordered_map<uint64_t, Slice> sst_filter;
 std::unordered_map<uint64_t, std::shared_ptr<bloom_filter>> sst_filter;
 std::atomic<uint64_t> block_reads{0};
 
@@ -570,6 +568,28 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
+void DBImpl::InitPartition(MemTable* mem, Iterator* iter) {
+  uint64_t total_key_count = mem->GetKeyCount();
+  uint64_t key_per_partition = total_key_count / options_.use_partitions;
+  uint64_t key_in_current_partition = 0;
+  uint64_t partition_count = 0;
+  while (iter->Valid()) {
+    key_in_current_partition++;
+    if (key_in_current_partition == key_per_partition) {
+      std::string key_str = iter->key().ToString().substr(0, 16);
+      partitions.emplace(key_str, std::make_shared<interval_tree_wrapper>());
+      key_in_current_partition = 0;
+      partition_count++;
+    }
+    if (partition_count == options_.use_partitions - 1) {
+      break;
+    }
+    iter->Next();
+  }
+  std::string max_str("9999999999999999");
+  partitions.emplace(max_str, std::make_shared<interval_tree_wrapper>());
+}
+
 Status DBImpl::WriteLevel0Tables(MemTable* mem, VersionEdit* edit) {
   mutex_.AssertHeld();
   const uint64_t start_micros = env_->NowMicros();
@@ -578,6 +598,10 @@ Status DBImpl::WriteLevel0Tables(MemTable* mem, VersionEdit* edit) {
   int level = 0;
   Status s;
   iter->SeekToFirst();
+  if (partitions.size() == 0) {
+    // init partitions
+    InitPartition(mem, iter);
+  }
   while (iter->Valid()) {
     FileMetaData meta;
     meta.number = versions_->NewFileNumber();
@@ -651,7 +675,7 @@ void DBImpl::CompactMemTable() {
     imm_->Unref();
     imm_ = nullptr;
     has_imm_.store(false, std::memory_order_release);
-    DeleteObsoleteFiles(l0_intervals);
+    DeleteObsoleteFiles(nullptr);
   } else {
     RecordBackgroundError(s);
   }
@@ -815,6 +839,7 @@ void DBImpl::BackgroundCompaction() {
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles(c->get_interval_tree());
+    c->get_interval_tree()->unlock();
   }
   delete c;
 
@@ -1298,6 +1323,7 @@ Status DBImpl::GetFromInterval(
     s = ReadBlock(file, options, block_handle, &block_contents);
     cur_reads++;
     if (!s.ok()) {
+      std::cout << "read block failed!" << std::endl;
       return s;
     }
     // create a block in memory using the block content

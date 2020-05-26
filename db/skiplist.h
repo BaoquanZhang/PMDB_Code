@@ -59,6 +59,9 @@ class SkipList {
   // Returns true iff an entry that compares equal to key is in the list.
   bool Contains(const Key& key) const;
 
+  // get the total node count
+  uint64_t GetNodeCount() {return node_count_; }
+
   // Iteration over the contents of a skip list
   class Iterator {
    public:
@@ -139,6 +142,7 @@ class SkipList {
 
   // Read/written only by Insert().
   Random rnd_;
+  uint64_t node_count_;
 };
 
 // Implementation details follow
@@ -183,6 +187,7 @@ typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
     const Key& key, int height) {
   char* const node_memory = arena_->AllocateAligned(
       sizeof(Node) + sizeof(std::atomic<Node*>) * (height - 1));
+  node_count_++;
   return new (node_memory) Node(key);
 }
 
@@ -327,7 +332,8 @@ SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena* arena)
       arena_(arena),
       head_(NewNode(0 /* any key will do */, kMaxHeight)),
       max_height_(1),
-      rnd_(0xdeadbeef) {
+      rnd_(0xdeadbeef),
+      node_count_(0) {
   for (int i = 0; i < kMaxHeight; i++) {
     head_->SetNext(i, nullptr);
   }

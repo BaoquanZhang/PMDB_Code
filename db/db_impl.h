@@ -180,6 +180,8 @@ class DBImpl : public DB {
                         VersionEdit* edit, SequenceNumber* max_sequence)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  void InitPartition(MemTable* mem, Iterator* iter);
+
   Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Status WriteLevel0Tables(MemTable* mem, VersionEdit* edit)

@@ -215,13 +215,15 @@ class TableConstructor : public Constructor {
   Status FinishImpl(const Options& options, const KVMap& data) override {
     Reset();
     StringSink sink;
-    TableBuilder builder(options, &sink);
+    uint64_t fileid = 1;
+    std::shared_ptr<interval_tree_wrapper> interval_tree = std::make_shared<interval_tree_wrapper>();
+    TableBuilder builder(options, &sink, fileid, interval_tree);
 
     for (const auto& kvp : data) {
-      builder.Add(kvp.first, kvp.second);
+      builder.Add(kvp.first, kvp.second, kvp.first.substr(0, 16));
       ASSERT_TRUE(builder.status().ok());
     }
-    Status s = builder.Finish();
+    Status s = builder.Finish(0);
     ASSERT_TRUE(s.ok()) << s.ToString();
 
     ASSERT_EQ(sink.contents().size(), builder.FileSize());
