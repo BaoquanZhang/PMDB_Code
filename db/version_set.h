@@ -144,7 +144,7 @@ class Version {
         file_to_compact_level_(-1),
         compaction_score_(-1),
         compaction_level_(-1),
-        leafnode_scan_key(nullptr){}
+        leafnode_scan_key(""){}
 
   Version(const Version&) = delete;
   Version& operator=(const Version&) = delete;

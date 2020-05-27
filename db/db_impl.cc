@@ -998,6 +998,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   input->SeekToFirst();
   Status status;
   ParsedInternalKey ikey;
+  std::string last_user_key("");
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
@@ -1062,7 +1063,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
       //TODO() Compare the sst_id of the key and sst_id find from B+tree
       //if they are not equal, then the key need to drop
+      // In the current implementation, we only keep the first key which can be incorrect.
       uint64_t key_sid =  global_index.findSid(key.ToString().substr(0, 16));
+      if (current_user_key == last_user_key) {
+        drop = true;
+      }
 
       last_sequence_for_key = ikey.sequence;
     }
@@ -1088,12 +1093,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
-      compact->builder->Add(key, input->value());
        // record the output file for single level index
-      std::string current_key = key.ToString().substr(0, 16);
       new_file_ids.push_back(compact->current_output()->number);
-      key_to_update.emplace_back(current_key);
-      compact->builder->Add(key,input->value(),block_offset);
+      last_user_key = current_user_key;
+      key_to_update.emplace_back(current_user_key);
+      compact->builder->Add(key, input->value(),block_offset);
       // record the keys to update in the single level index
       //
       //key_to_update.back().push_back(current_key);
@@ -1101,7 +1105,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
-        status = FinishCompactionOutputFile(compact, input,key_to_update,new_file_ids,block_offset);
+        status = FinishCompactionOutputFile(compact, input, key_to_update,new_file_ids,block_offset);
         new_file_ids.clear();
         key_to_update.clear();
         block_offset.clear();
@@ -1118,7 +1122,10 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     status = Status::IOError("Deleting DB during compaction");
   }
   if (status.ok() && compact->builder != nullptr) {
-    status = FinishCompactionOutputFile(compact, input);
+    status = FinishCompactionOutputFile(compact, input, key_to_update,new_file_ids,block_offset);
+    new_file_ids.clear();
+    key_to_update.clear();
+    block_offset.clear();
   }
   if (status.ok()) {
     status = input->status();

@@ -4,8 +4,6 @@
 
 #include "db/version_set.h"
 
-#include <stdio.h>
-
 #include <algorithm>
 
 #include "db/btree_wrapper.h"
@@ -20,8 +18,10 @@
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 #include "util/logging.h"
+
 #include <iostream>
 #include <limits>
+#include <stdlib.h>
 namespace leveldb {
 
   port::Mutex mtx_;
@@ -1317,9 +1317,16 @@ Compaction* VersionSet::PickCompaction() {
   std::vector<std::pair<int,std::vector<int> > > ssts;
   std::vector<double> total_ratio;
   //memset(overlap_ratio,-1,sizeof(overlap_ratio));
-  int i=0,j=0;
+  int i=0, j=0;
+  /* 05.26.2020 By Baoquan
+   * I have questions on the following logic.
+   * Besides, in my opinions, all SST files in the compaction candidate list will be selected
+   * in most cases. Therefore, I temorarily comment out the computation process of overlap ratio.
+   * Currently, I select all SSTs in the compaction candidate list.
+   * */
+  /*
   for(auto s = candidate_list_ssts.begin(); (s != candidate_list_ssts.end()) && (i < list_size); s++, i++){
-      total_ratio[i] = 0;
+      total_ratio.push_back(0);
       //ssts.push_back(s->first);
       std::vector<int> overlap_ssts;
       InternalKey s_largest = s->second->largest;
@@ -1334,19 +1341,18 @@ Compaction* VersionSet::PickCompaction() {
             st_sl = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?s_smallest:t_smallest;
             st_ss = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?t_smallest:s_smallest;
 
-            uint64_t int_ll =  atoi(st_ll.user_key().data());
-            uint64_t int_ls =  atoi(st_ls.user_key().data());
-            uint64_t int_sl =  atoi(st_sl.user_key().data());
-            uint64_t int_ss =  atoi(st_ss.user_key().data());
+            auto int_ll =  std::atof(st_ll.user_key().data());
+            auto int_ls =  std::atof(st_ls.user_key().data());
+            auto int_sl =  std::atof(st_sl.user_key().data());
+            auto int_ss =  std::atof(st_ss.user_key().data());
             // (st_ls - st_sl)/(st_ll - st_ss)
-            overlap_ratio[i][j] =  (int_ls - int_sl)/(int_ll - int_ss); 
+            overlap_ratio[i][j] =  (int_ls - int_sl) / (int_ll - int_ss);
             if(overlap_ratio[i][j] < 0){
               overlap_ratio[i][j] = 0;
             }else{
               overlap_ssts.push_back(t->first);
             }           
           }
-
       total_ratio[i] += overlap_ratio[i][j];
       ssts.push_back(std::make_pair(s->first, overlap_ssts));
   }
@@ -1361,15 +1367,20 @@ Compaction* VersionSet::PickCompaction() {
   int sid = ssts[max_idx].first;
   std::vector<int> sids = ssts[max_idx].second;
   FileMetaData* f;
-  f = candidate_list_ssts[sid]; 
-  c->inputs_[0].push_back(f);
-  candidate_list_ssts.erase(candidate_list_ssts.find(sid));
-  assert(!c->inputs_[0].empty());
-  for(auto it = sids.begin(); it != sids.end(); it++){
-    f = candidate_list_ssts[(*it)];
-    c->inputs_[1].push_back(f);
-    candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
+  f = candidate_list_ssts[sid];
+  */
+
+  for (const auto& sst_id_to_compact : candidate_list_ssts) {
+    c->inputs_[0].emplace_back(sst_id_to_compact.second);
   }
+  candidate_list_ssts.clear();
+  //candidate_list_ssts.erase(candidate_list_ssts.find(sid));
+  assert(!c->inputs_[0].empty());
+  //for(auto it = sids.begin(); it != sids.end(); it++){
+  //  f = candidate_list_ssts[(*it)];
+  //  c->inputs_[1].push_back(f);
+  //  candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
+  //}
   mtx_.Unlock();
   c->input_version_ = current_;
   c->input_version_->Ref();

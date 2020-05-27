@@ -124,7 +124,8 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   }
 }
 
-  void TableBuilder::Add(const Slice& key, const Slice& value, std::vector<uint64_t>& blocks) {
+  void TableBuilder::Add(const Slice& key,
+      const Slice& value, std::vector<uint64_t>& blocks) {
     Rep* r = rep_;
     assert(!r->closed);
     if (!ok()) return;
