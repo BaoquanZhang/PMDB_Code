@@ -286,7 +286,7 @@ class VersionSet {
     mtx_.Lock();
     uint64_t current_candidate_size = candidate_list_ssts.size();
     mtx_.Unlock();
-   return (current_candidate_size > candidate_list_size);
+   return (current_candidate_size >= candidate_list_size);
   }
 
   // Add all files listed in any live version to *live.

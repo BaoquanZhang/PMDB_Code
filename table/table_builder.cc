@@ -232,10 +232,12 @@ void TableBuilder::WriteRawBlock(const Slice& block_contents,
 
 Status TableBuilder::status() const { return rep_->status; }
 
-Status TableBuilder::Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
-                                 std::vector<uint64_t> block_offset,std::vector<FileMetaData*>** files_) {
-  
-  global_index.insertKeys(keys,ssts,block_offset,files_);
+Status TableBuilder::Finish(
+    std::vector<std::string> keys,
+    std::vector<uint64_t> ssts,
+    std::vector<uint64_t> block_offset,
+    std::vector<FileMetaData*>** files_) {
+
   
   Rep* r = rep_;
   Flush();
@@ -290,6 +292,13 @@ Status TableBuilder::Finish(std::vector<std::string> keys, std::vector<uint64_t>
       r->offset += footer_encoding.size();
     }
   }
+
+  global_index.insertKeys(
+      std::move(keys),
+      std::move(ssts),
+      std::move(block_offset),
+      files_);
+
   return r->status;
 }
 

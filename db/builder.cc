@@ -11,7 +11,6 @@
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "leveldb/iterator.h"
-#include <iostream>
 #include "btree_wrapper.h"
 #include <unordered_map>
 
@@ -96,7 +95,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
   if (s.ok() && meta->file_size > 0) {
     // Keep it
     // We update the global tree index here
-    global_index.insertKeys(keys, ssts,blocks,files_);
+    global_index.insertKeys(keys, ssts, blocks, files_);
   } else {
     env->DeleteFile(fname);
   }

@@ -553,15 +553,6 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
   stats_[level].Add(stats);
-  // since we only have one level
-  // therefore we may schedule compaction for every sst files
-  /*
-  manual_compaction_ = new ManualCompaction();
-  manual_compaction_->level = 0;
-  manual_compaction_->begin = nullptr;
-  manual_compaction_->end = nullptr;
-  
-  */
   MaybeScheduleCompaction();
   return s;
 }
@@ -709,7 +700,6 @@ void DBImpl::BackgroundCall() {
     // No more background work after a background error.
   } else {
     BackgroundCompaction();
-    versions_->LeafNodeScan();
   }
 
   background_compaction_scheduled_ = false;
@@ -755,7 +745,7 @@ void DBImpl::BackgroundCompaction() {
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
     c->edit()->DeleteFile(c->level(), f->number);
-     c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
+     c->edit()->AddFile(c->level(), f->number, f->file_size, f->smallest,
                        f->largest);
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
@@ -844,8 +834,10 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
 }
 
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
-                                          Iterator* input,std::vector<std::string> keys, std::vector<uint64_t> ssts,
-                                 std::vector<uint64_t> block_offset) {
+                                          Iterator* input,
+                                          std::vector<std::string> keys,
+                                          std::vector<uint64_t> ssts,
+                                          std::vector<uint64_t> block_offset) {
   assert(compact != nullptr);
   assert(compact->outfile != nullptr);
   assert(compact->builder != nullptr);
@@ -857,11 +849,14 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
-    std::vector<FileMetaData*>* files_ ;
+    std::vector<FileMetaData*>* files_;
     mutex_.Lock();
     files_ = versions_->current()->filemeta();
     mutex_.Unlock();
-    s = compact->builder->Finish(keys,ssts,block_offset,&files_);
+    s = compact->builder->Finish(std::move(keys),
+                                 std::move(ssts),
+                                 std::move(block_offset),
+                                 &files_);
   } else {
     compact->builder->Abandon();
   }
@@ -959,14 +954,13 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   write_count += compact->compaction->num_input_files(0)
                  + compact->compaction->num_input_files(1)
                  + compact->outputs.size();
-
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
   const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
     //TODO() fixed level #
-    compact->compaction->edit()->AddFile(2, out.number, out.file_size,
+    compact->compaction->edit()->AddFile(level, out.number, out.file_size,
                                           out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
@@ -979,7 +973,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   Log(options_.info_log, "Compacting %d@%d + %d@%d files",
       compact->compaction->num_input_files(0), compact->compaction->level(),
       compact->compaction->num_input_files(1),
-      compact->compaction->level() + 1);
+      compact->compaction->level());
 
   assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
   assert(compact->builder == nullptr);
@@ -998,7 +992,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   input->SeekToFirst();
   Status status;
   ParsedInternalKey ikey;
-  std::string last_user_key("");
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
@@ -1065,9 +1058,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       //if they are not equal, then the key need to drop
       // In the current implementation, we only keep the first key which can be incorrect.
       uint64_t key_sid =  global_index.findSid(key.ToString().substr(0, 16));
-      if (current_user_key == last_user_key) {
-        drop = true;
-      }
 
       last_sequence_for_key = ikey.sequence;
     }
@@ -1095,7 +1085,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       compact->current_output()->largest.DecodeFrom(key);
        // record the output file for single level index
       new_file_ids.push_back(compact->current_output()->number);
-      last_user_key = current_user_key;
       key_to_update.emplace_back(current_user_key);
       compact->builder->Add(key, input->value(),block_offset);
       // record the keys to update in the single level index
@@ -1135,7 +1124,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
-  for (int which = 0; which < 2; which++) {
+  for (int which = 0; which < 1; which++) {
     for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
       stats.bytes_read += compact->compaction->input(which, i)->file_size;
     }
@@ -1145,7 +1134,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
 
   mutex_.Lock();
-  stats_[compact->compaction->level() + 1].Add(stats);
+  stats_[compact->compaction->level()].Add(stats);
 
   if (status.ok()) {
     status = InstallCompactionResults(compact);

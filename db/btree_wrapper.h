@@ -18,7 +18,7 @@ namespace leveldb {
 
   class btree_wrapper {
   public:
-    btree_wrapper() {};
+    btree_wrapper() : cur_key_("") {};
 
     /* Searching for a specific key
      * Params:
@@ -52,8 +52,12 @@ namespace leveldb {
 
     uint64_t findSid(std::string key);
 
+    std::string getCurrentKey() {return cur_key_; }
+    void setCurrentKey(std::string key) { cur_key_ = key; }
+
   private:
     btree::btree_map<std::string, std::pair<uint64_t, uint64_t>> global_tree;
+    std::string cur_key_;
   };
 }
 

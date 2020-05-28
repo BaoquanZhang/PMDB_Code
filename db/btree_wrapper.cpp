@@ -4,6 +4,7 @@
 
 #include "btree_wrapper.h"
 #include <iostream>
+#include <unordered_set>
 
 #include "leveldb/db.h"
 #include "db/version_set.h"
@@ -74,20 +75,17 @@ namespace leveldb {
 
 //TODO() what if key is not exist? should use the next key no less than cur_key
   std::string btree_wrapper::scanLeafnode(std::string cur_key, int num,std::vector<FileMetaData*>** files_){
-    std::vector<int> unique_file_id;
+    if (global_tree.size() == 0)
+      return "";
+    std::unordered_set<int> unique_file_id;
     auto it = global_tree.upper_bound(cur_key);
     //auto it = global_tree.find(cur_key);
-    auto tmp = it;
     std::string next_key;
-    for(int i = 0; i < num || tmp != global_tree.end(); tmp++, i++){
-      int sst_id = tmp->second.first;
-      if(std::find(unique_file_id.begin(), unique_file_id.end(), sst_id) 
-        == unique_file_id.end()){
-          unique_file_id.push_back(sst_id);
-      }
+    for(int i = 0; i < num && it != global_tree.end(); it++, i++){
+      unique_file_id.emplace(it->second.first);
     }
     mtx_.Lock();
-    if(unique_file_id.size()>leafnodescan_threshold){
+    if(unique_file_id.size() >= leafnodescan_threshold) {
       for(auto file_id_it = unique_file_id.begin(); file_id_it != unique_file_id.end(); file_id_it++){
         FileMetaData* f; //find meta data by sst_id
         f = find_filemeta((*file_id_it),files_);
@@ -96,7 +94,7 @@ namespace leveldb {
     }
     mtx_.Unlock();
     
-    next_key = (tmp == global_tree.end()) ? global_tree.begin()->first : tmp->first;
+    next_key = (it == global_tree.end()) ? global_tree.begin()->first : it->first;
     return next_key;
   }
   
