@@ -55,9 +55,16 @@ namespace leveldb {
     std::string getCurrentKey() {return cur_key_; }
     void setCurrentKey(std::string key) { cur_key_ = key; }
 
+    uint64_t get_mem_reads() { return mem_reads_; }
+    void reset_mem_reads() { mem_reads_ = 0;}
+    uint64_t get_mem_writes() { return mem_writes_;}
+    void reset_mem_writes() { mem_writes_ = 0; }
+
   private:
     btree::btree_map<std::string, std::pair<uint64_t, uint64_t>> global_tree;
     std::string cur_key_;
+    std::atomic<uint64_t> mem_reads_{0};
+    std::atomic<uint64_t> mem_writes_{0};
   };
 }
 

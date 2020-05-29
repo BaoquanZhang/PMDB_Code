@@ -3,7 +3,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "table/format.h"
-
+#include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "table/block.h"
@@ -63,6 +63,7 @@ Status Footer::DecodeFrom(Slice* input) {
 
 Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
                  const BlockHandle& handle, BlockContents* result) {
+  read_count++;
   result->data = Slice();
   result->cachable = false;
   result->heap_allocated = false;

@@ -120,6 +120,10 @@ static uint64_t FLAGS_size_ratio = 10;
 // If true, then use the btree index
 static bool FLAGS_use_btree_index = false;
 
+// The lengths of query for short/long ranges
+uint64_t FLAGS_short_range_len = 48;
+uint64_t FLAGS_long_range_len = 1024;
+
 namespace leveldb {
 
 namespace {
@@ -496,6 +500,10 @@ class Benchmark {
         method = &Benchmark::ReadMissing;
       } else if (name == Slice("seekrandom")) {
         method = &Benchmark::SeekRandom;
+      } else if (name == Slice("shortrange")) {
+        method = &Benchmark::ShortRange;
+      } else if (name == Slice("longrange")) {
+        method = &Benchmark::LongRange;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -748,6 +756,8 @@ class Benchmark {
       }
     }
     thread->stats.AddBytes(bytes);
+    db_->display_mem_storage_access();
+    db_->reset_mem_storage_access();
   }
 
   void ReadSequential(ThreadState* thread) {
@@ -792,6 +802,8 @@ class Benchmark {
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
+    db_->display_mem_storage_access();
+    db_->reset_mem_storage_access();
   }
 
   void ReadMissing(ThreadState* thread) {
@@ -835,6 +847,42 @@ class Benchmark {
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
+  }
+
+  void ShortRange(ThreadState* thread) {
+    RandomRange(thread, true);
+  }
+
+  void LongRange(ThreadState* thread) {
+    RandomRange(thread, false);
+  }
+
+  void RandomRange(ThreadState* thread, bool isShort) {
+    ReadOptions options;
+    uint64_t len = isShort ? FLAGS_short_range_len : FLAGS_long_range_len;
+    int found = 0;
+    for (int i = 0; i < reads_/len; i++) {
+      Iterator* iter = db_->NewIterator(options);
+      char key[100];
+      const int k = thread->rand.Next() % FLAGS_num;
+      snprintf(key, sizeof(key), "%016d", k);
+      iter->Seek(key);
+      if (iter->Valid() && iter->key() == key) found++;
+      int j = 0;
+      while (j < len) {
+        iter->Next();
+        iter->key();
+        iter->value();
+        j++;
+      }
+      delete iter;
+      thread->stats.FinishedSingleOp();
+    }
+    char msg[100];
+    snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
+    thread->stats.AddMessage(msg);
+    db_->display_mem_storage_access();
+    db_->reset_mem_storage_access();
   }
 
   void DoDelete(ThreadState* thread, bool seq) {
@@ -976,6 +1024,10 @@ int main(int argc, char** argv) {
       FLAGS_level1_ratio = n;
     } else if (sscanf(argv[i], "--use_btree_index=%d%c", &n, &junk) == 1) {
       FLAGS_use_btree_index = n;
+    } else if (sscanf(argv[i], "--short_range_len=%d%c", &n, &junk) == 1) {
+      FLAGS_short_range_len = n;
+    } else if (sscanf(argv[i], "--long_range_len=%d%c", &n, &junk) == 1) {
+      FLAGS_long_range_len = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {

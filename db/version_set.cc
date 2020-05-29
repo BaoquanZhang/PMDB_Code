@@ -1237,7 +1237,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   int num = 0;
   const std::vector<FileMetaData*>& files = c->inputs_[0]; // we only use input0
   for (size_t i = 0; i < files.size(); i++) {
-    if (files[i] == nullptr) // why is it null_ptr?
+    if (files[i] == nullptr || files[i]->number == 0) // why is it null_ptr?
       continue;
     list[num++] = table_cache_->NewIterator(options,
         files[i]->number, files[i]->file_size);
@@ -1367,7 +1367,7 @@ Compaction* VersionSet::PickCompaction() {
   */
 
   for (const auto& sst_id_to_compact : candidate_list_ssts) {
-    if (sst_id_to_compact.second == nullptr)
+    if (sst_id_to_compact.second == nullptr || sst_id_to_compact.first == 0)
       continue;
     c->inputs_[0].emplace_back(sst_id_to_compact.second);
   }

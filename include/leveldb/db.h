@@ -78,6 +78,11 @@ class LEVELDB_EXPORT DB {
 
   virtual ~DB();
 
+  // display/reset mem_reads_, mem_writes_, read_counts and write counts
+
+  virtual void display_mem_storage_access() = 0;
+  virtual void reset_mem_storage_access() = 0;
+
   // Set the database entry for "key" to "value".  Returns OK on success,
   // and a non-OK status on error.
   // Note: consider setting options.sync = true.

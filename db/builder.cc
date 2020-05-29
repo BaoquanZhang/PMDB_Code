@@ -47,17 +47,11 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
     for (; iter->Valid(); iter->Next()) {
       Slice key = iter->key();
       meta->largest.DecodeFrom(key);
-      if (options.use_btree_index) {
-        // we can get key and sst here. However, we can not get
-        // block offset.
-        std::string real_key = key.ToString().substr(0, 16);
-        keys.push_back(real_key);
-        ssts.push_back(meta->number);
-        // we have to enter table builder to find block offset
-        builder->Add(key, iter->value(), blocks);
-      } else {
-        builder->Add(key, iter->value());
-      }
+      std::string real_key = key.ToString().substr(0, 16);
+      keys.push_back(real_key);
+      ssts.push_back(meta->number);
+      // we have to enter table builder to find block offset
+      builder->Add(key, iter->value(), blocks);
     }
 
     // Finish and check for builder errors

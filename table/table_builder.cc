@@ -142,6 +142,9 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
       r->pending_index_entry = false;
     }
 
+    // get block offset here
+    blocks.push_back(r->offset);
+
     if (r->filter_block != nullptr) {
       r->filter_block->AddKey(key);
     }
@@ -149,9 +152,6 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     r->last_key.assign(key.data(), key.size());
     r->num_entries++;
     r->data_block.Add(key, value);
-
-    // get block offset here
-    blocks.push_back(r->pending_handle.offset());
 
     const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
     if (estimated_block_size >= r->options.block_size) {
@@ -176,13 +176,14 @@ void TableBuilder::Flush() {
 }
 
 void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle) {
-  // File format contains a sequence of blocks where each block has:
+  // File format contains a sequence of blocks where 3each block has:
   //    block_data: uint8[n]
   //    type: uint8
   //    crc: uint32
   assert(ok());
   Rep* r = rep_;
   Slice raw = block->Finish();
+  write_count++;
 
   Slice block_contents;
   CompressionType type = r->options.compression;

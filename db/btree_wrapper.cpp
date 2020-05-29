@@ -26,6 +26,7 @@ namespace leveldb {
   }
 
   bool btree_wrapper::findKey(std::string key, std::pair<uint64_t, uint64_t>& sst_offset) {
+    mem_reads_ += std::log(global_tree.size());
     auto it = global_tree.find(key);
     if (it == global_tree.end()) {
       return false;
@@ -56,20 +57,23 @@ namespace leveldb {
        }      
       }
     }
+    mem_writes_++;
     global_tree.insert(it, entry);
   }
 
   void btree_wrapper::insertKeys(std::vector<std::string> keys, std::vector<uint64_t> ssts,
                                  std::vector<uint64_t> blocks,std::vector<FileMetaData*>** files_) {
+    if (keys.size() == 0)
+      return;
     assert(keys.size() == ssts.size());
     assert(keys.size() == blocks.size());
-   std::pair<uint64_t,uint64_t> valid_invalid(keys.size(),0);
-   std::pair<uint64_t,std::pair<uint64_t,uint64_t>> entry(ssts[0],valid_invalid);
-   sst_valid_key.insert(entry);
-   mtx_.Lock();
-   for (uint64_t i = 0; i < keys.size(); i++) {
+    std::pair<uint64_t,uint64_t> valid_invalid(keys.size(),0);
+    std::pair<uint64_t,std::pair<uint64_t,uint64_t>> entry(ssts[0],valid_invalid);
+    sst_valid_key.insert(entry);
+    mtx_.Lock();
+    for (uint64_t i = 0; i < keys.size(); i++) {
       insertKey(keys[i], ssts[i], blocks[i],files_);
-   }
+    }
     mtx_.Unlock();
   }
 
@@ -79,6 +83,7 @@ namespace leveldb {
       return "";
     std::unordered_set<int> unique_file_id;
     auto it = global_tree.upper_bound(cur_key);
+    mem_reads_ += std::log(global_tree.size());
     //auto it = global_tree.find(cur_key);
     std::string next_key;
     for(int i = 0; i < num && it != global_tree.end(); it++, i++){
@@ -90,6 +95,9 @@ namespace leveldb {
         FileMetaData* f; //find meta data by sst_id
         f = find_filemeta((*file_id_it),files_);
         candidate_list_ssts[*file_id_it]=f;
+        mem_reads_++;
+        if (candidate_list_ssts.size() >= candidate_list_size)
+          break;
       }
     }
     mtx_.Unlock();

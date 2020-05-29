@@ -180,14 +180,6 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
-  std::cout << "write_count: " << write_count << std::endl;
-  std::cout << "read_count: " << read_count << std::endl;
-  /*
-  std::cout << "sst invalid keys:" << std::endl;
-  for (auto it = sst_live_ratio.begin(); it != sst_live_ratio.end(); it++) {
-    std::cout << it->first << ":" << it->second << std::endl;
-  }
-  */
 }
 
 Status DBImpl::NewDB() {
@@ -546,7 +538,6 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     }
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
-    write_count++;
   }
 
   CompactionStats stats;
@@ -765,6 +756,9 @@ void DBImpl::BackgroundCompaction() {
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
+    mtx_.Lock();
+    candidate_list_ssts.clear();
+    mtx_.Unlock();
   }
   delete c;
 
@@ -951,9 +945,6 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
       compact->compaction->num_input_files(0), compact->compaction->level(),
       compact->compaction->num_input_files(1), compact->compaction->level() + 1,
       static_cast<long long>(compact->total_bytes));
-  write_count += compact->compaction->num_input_files(0)
-                 + compact->compaction->num_input_files(1)
-                 + compact->outputs.size();
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
   const int level = compact->compaction->level();
@@ -1094,7 +1085,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
-        status = FinishCompactionOutputFile(compact, input, key_to_update,new_file_ids,block_offset);
+        status = FinishCompactionOutputFile(compact, input, key_to_update, new_file_ids, block_offset);
         new_file_ids.clear();
         key_to_update.clear();
         block_offset.clear();
@@ -1111,7 +1102,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     status = Status::IOError("Deleting DB during compaction");
   }
   if (status.ok() && compact->builder != nullptr) {
-    status = FinishCompactionOutputFile(compact, input, key_to_update,new_file_ids,block_offset);
+    status = FinishCompactionOutputFile(compact, input, key_to_update, new_file_ids, block_offset);
     new_file_ids.clear();
     key_to_update.clear();
     block_offset.clear();
@@ -1239,7 +1230,6 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
     block_handle.set_size(options_.block_size);
     BlockContents block_contents;
     s = ReadBlock(file, options, block_handle, &block_contents);
-    read_count++;
     if (!s.ok()) {
       return s;
     }
@@ -1492,18 +1482,16 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   bool allow_delay = !force;
   Status s;
   while (true) {
+    mtx_.Lock();
+    uint64_t sst_count_in_candidate = candidate_list_ssts.size();
+    mtx_.Unlock();
     if (!bg_error_.ok()) {
       // Yield previous error
       s = bg_error_;
       break;
-    } else if (allow_delay && versions_->NumLevelFiles(0) >=
-                                  config::kL0_SlowdownWritesTrigger) {
-      // We are getting close to hitting a hard limit on the number of
-      // L0 files.  Rather than delaying a single write by several
-      // seconds when we hit the hard limit, start delaying each
-      // individual write by 1ms to reduce latency variance.  Also,
-      // this delay hands over some CPU to the compaction thread in
-      // case it is sharing the same core as the writer.
+    } else if (allow_delay && sst_count_in_candidate >= candidate_list_size) {
+      // It there are too many ssts in the candidate list, the write process
+      // will be delayed.
       mutex_.Unlock();
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
@@ -1517,8 +1505,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
-    } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
-      // There are too many level-0 files.
+    } else if (sst_count_in_candidate >= candidate_list_size) {
+      // There are too many candidate files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
     } else {

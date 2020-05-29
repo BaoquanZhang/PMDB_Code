@@ -36,6 +36,21 @@ class DBImpl : public DB {
 
   ~DBImpl() override;
 
+  // display/reset mem and storage access
+  void display_mem_storage_access() override {
+    std::cout << "mem reads: " << global_index.get_mem_reads() << std::endl;
+    std::cout << "mem writes: " << global_index.get_mem_writes() << std::endl;
+    std::cout << "storage reads: " << read_count << std::endl;
+    std::cout << "storage writes: " << write_count << std::endl;
+  }
+
+  void reset_mem_storage_access() override {
+    global_index.reset_mem_reads();
+    global_index.reset_mem_writes();
+    read_count = 0;
+    write_count = 0;
+  }
+
   // Implementations of the DB interface
   Status Put(const WriteOptions&, const Slice& key,
              const Slice& value) override;
