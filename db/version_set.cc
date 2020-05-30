@@ -1307,7 +1307,7 @@ Compaction* VersionSet::PickCompaction() {
   mtx_.Lock();
   list_size = candidate_list_ssts.size();
   double overlap_ratio[list_size][list_size];
-  Compaction* c;
+  Compaction* c = nullptr;
   int level = 0;
   c = new Compaction(options_, level);
   std::vector<std::pair<int,std::vector<int> > > ssts;

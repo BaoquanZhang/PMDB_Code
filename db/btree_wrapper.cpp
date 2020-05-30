@@ -96,8 +96,6 @@ namespace leveldb {
         f = find_filemeta((*file_id_it),files_);
         candidate_list_ssts[*file_id_it]=f;
         mem_reads_++;
-        if (candidate_list_ssts.size() >= candidate_list_size)
-          break;
       }
     }
     mtx_.Unlock();
