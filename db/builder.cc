@@ -77,7 +77,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
 }
 
 Status BuildTableForPartitions(const std::string& dbname, Env* env, const Options& options,
-                  TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
+                  TableCache* table_cache, Iterator* iter, FileMetaData* meta, Slice& cur_key) {
   Status s;
   meta->file_size = 0;
   std::string fname = TableFileName(dbname, meta->number);
@@ -103,12 +103,14 @@ Status BuildTableForPartitions(const std::string& dbname, Env* env, const Option
 
       if( tmp_key > cur_partition->first) {
         // next partition
+        cur_key = iter->key();
         break;
       }
 
       meta->largest.DecodeFrom(key);
       builder->Add(key, iter->value(), key.ToString().substr(0,16));
     }
+    cur_key.clear();
     // Finish and check for builder errors
     s = builder->Finish(0);
     if (s.ok()) {

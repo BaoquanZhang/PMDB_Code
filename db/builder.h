@@ -31,7 +31,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
 // If we set the stop_size, we will stop building a table when the size of the
 // table is not smaller than the stop size.
 Status BuildTableForPartitions(const std::string& dbname, Env* env, const Options& options,
-                           TableCache* table_cache, Iterator* iter, FileMetaData* meta);
+                           TableCache* table_cache, Iterator* iter, FileMetaData* meta, Slice& cur_start_key);
 
 }  // namespace leveldb
 

@@ -612,7 +612,11 @@ Status DBImpl::WriteLevel0Tables(MemTable* mem, VersionEdit* edit) {
     // init partitions
     InitPartition(mem, iter);
   }
+  Slice cur_start_key = iter->key();
   while (iter->Valid()) {
+    if (cur_start_key.empty())
+      break;
+    iter->Seek(cur_start_key);
     FileMetaData meta;
     meta.number = versions_->NewFileNumber();
     pending_outputs_.insert(meta.number);
@@ -622,7 +626,7 @@ Status DBImpl::WriteLevel0Tables(MemTable* mem, VersionEdit* edit) {
     {
       mutex_.Unlock();
       // TODO: iter will not change. Find a way to change iter
-      s = BuildTableForPartitions(dbname_, env_, options_, table_cache_, iter, &meta);
+      s = BuildTableForPartitions(dbname_, env_, options_, table_cache_, iter, &meta, cur_start_key);
       mutex_.Lock();
     }
 
