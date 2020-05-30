@@ -6,9 +6,12 @@
 void interval_tree_wrapper::add_interval(
     const std::string& start_key, const std::string& end_key,
     uint64_t sst, uint64_t offset, uint64_t block_size) {
+  size_++;
   std::string start_str = start_key.substr(0, 16);
   std::string end_str = end_key.substr(0, 16);
   target cur_target(sst, offset, block_size);
+  mem_reads_ += std::log((double)size_);
+  mem_writes_++;
   intervals.insert({start_str, end_str, cur_target});
   files.emplace(sst);
 }
@@ -29,8 +32,10 @@ std::vector<target> interval_tree_wrapper::find_overlap(
 std::vector<target> interval_tree_wrapper::find_point(const std::string& key) {
   std::vector<target> targets;
   //auto overlapped_intervals = intervals.intervals();
+  mem_reads_ += std::log((double) size_);
   auto overlapped_intervals = intervals.findIntervalsContainPoint(key);
   for (const auto& overlapped_interval : overlapped_intervals) {
+    mem_reads_++;
     targets.push_back(overlapped_interval.value);
   }
   // std::cout << "Target Size: " << targets.size() << std::endl;
@@ -57,6 +62,7 @@ uint64_t interval_tree_wrapper::delete_by_file(const std::unordered_set<uint64_t
     uint64_t file_id_in_target = cur_interval.value.file_id_;
     if (files_to_delete.count(file_id_in_target) > 0) {
       intervals.remove(cur_interval);
+      size_--;
       deleted_files++;
     }
   }

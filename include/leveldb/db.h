@@ -76,12 +76,16 @@ class LEVELDB_EXPORT DB {
   virtual ~DB();
 
   // get storage/nvm reads and writes
-  virtual uint64_t get_mem_write() = 0;
+  virtual uint64_t get_mem_writes() = 0;
+  virtual void reset_mem_writes() = 0;
   virtual uint64_t get_storage_write() = 0;
-  virtual uint64_t get_mem_read() = 0;
+  virtual uint64_t get_mem_reads() = 0;
+  virtual void reset_mem_reads() = 0;
   virtual uint64_t get_storage_read() = 0;
   virtual uint64_t get_block_reads() = 0;
+  virtual void reset_block_reads() = 0;
   virtual uint64_t get_block_writes() = 0;
+  virtual void reset_block_writes() = 0;
 
 
   // Set the database entry for "key" to "value".  Returns OK on success,

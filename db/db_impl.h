@@ -81,20 +81,36 @@ class DBImpl : public DB {
   void display_index();
 
   // get stats info
-  uint64_t get_mem_write() override{
-    uint64_t mem_writes = 0;
-    mutex_.Lock();
-    mem_writes = stats_[0].mem_written;
-    mutex_.Unlock();
-    return mem_writes;
+  uint64_t get_mem_writes() override{
+    uint64_t total_writes = 0;
+    for (const auto& partition : partitions)
+      total_writes += partition.second->get_mem_writes();
+    for (const auto& range : disjoint_ranges)
+      total_writes += range.second->get_mem_writes();
+    return total_writes;
   }
 
-  uint64_t get_mem_read() override {
-    uint64_t mem_reads = 0;
-    mutex_.Lock();
-    mem_reads = stats_[0].mem_read;
-    mutex_.Unlock();
-    return mem_reads;
+  void reset_mem_writes() override {
+    for (const auto& partition : partitions)
+      partition.second->reset_mem_writes();
+    for (const auto& range : disjoint_ranges)
+      range.second->reset_mem_writes();
+  }
+
+  void reset_mem_reads() override {
+    for (const auto& partition : partitions)
+      partition.second->reset_mem_reads();
+    for (const auto& range : disjoint_ranges)
+      range.second->reset_mem_reads();
+  }
+
+  uint64_t get_mem_reads() override {
+    uint64_t total_reads = 0;
+    for (const auto& partition : partitions)
+      total_reads += partition.second->get_mem_reads();
+    for (const auto& range : disjoint_ranges)
+      total_reads += range.second->get_mem_reads();
+    return total_reads;
   }
 
   uint64_t get_storage_write() override {
@@ -119,8 +135,17 @@ class DBImpl : public DB {
   uint64_t get_block_reads() override {
     return block_reads;
   }
+
+  void reset_block_reads() override {
+    block_reads = 0;
+  }
+
   uint64_t get_block_writes() override {
     return block_writes;
+  }
+
+  void reset_block_writes() override {
+    block_writes = 0;
   }
 
  private:

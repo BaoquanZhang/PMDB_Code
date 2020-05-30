@@ -719,10 +719,15 @@ class Benchmark {
   }
 
   void display_storage_nvm() {
-    std::cout << "Displaying storage reads/writes:" << std::endl;
-    std::cout << "Storage writes: " << db_->get_storage_write() << std::endl;
-    std::cout << "Storage reads: " << db_->get_storage_read() << std::endl;
+    std::cout << "Displaying storage and memory reads/writes:" << std::endl;
+    std::cout << "Mem reads:" << db_->get_mem_reads() << std::endl;
+    std::cout << "Mem writes:" << db_->get_mem_writes() << std::endl;
     std::cout << "Block reads:" << db_->get_block_reads() << std::endl;
+    std::cout << "Block writes:" << db_->get_block_writes() << std::endl;
+    db_->reset_mem_writes();
+    db_->reset_mem_reads();
+    db_->reset_block_reads();
+    db_->reset_block_writes();
   }
 
   void WriteSeq(ThreadState* thread) { DoWrite(thread, true); }

@@ -150,6 +150,15 @@ public:
     files_to_delete_.clear();
   }
 
+  uint64_t get_size() { return size_; }
+
+  uint64_t get_mem_reads() { return mem_reads_; }
+  void reset_mem_reads() { mem_reads_ = 0; }
+
+  uint64_t get_mem_writes() { return mem_writes_; }
+  void reset_mem_writes() { mem_writes_ = 0; }
+
+
 private:
   //Intervals::IntervalTree<std::string, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> intervals;
   struct intervalComparator {
@@ -166,6 +175,9 @@ private:
   std::mutex mutex_;
   bool is_split_;
   std::unordered_set<uint64_t> files_to_delete_;
+  std::atomic<uint64_t> size_{0};
+  std::atomic<uint64_t> mem_reads_{0};
+  std::atomic<uint64_t> mem_writes_{0};
 };
 
 #endif //LEVELDB_INTERVAL_TREE_WRAPPER_H
