@@ -2,6 +2,7 @@
 // Created by Baoquan Zhang on 2.18
 //
 #include "interval_tree_wrapper.h"
+#include "leveldb/db.h"
 
 void interval_tree_wrapper::add_interval(
     const std::string& start_key, const std::string& end_key,
@@ -19,9 +20,9 @@ void interval_tree_wrapper::add_interval(
 
 std::vector<target> interval_tree_wrapper::find_overlap(
     const std::string& start, const std::string& end) {
-  std::vector<target> targets;
   //auto overlapped_intervals = intervals.intervals();
   auto overlapped_intervals = intervals.findOverlappingIntervals({start, end});
+  std::vector<target> targets(overlapped_intervals.size());
   for (const auto& overlapped_interval : overlapped_intervals) {
     targets.push_back(overlapped_interval.value);
   }
@@ -30,12 +31,17 @@ std::vector<target> interval_tree_wrapper::find_overlap(
 }
 
 std::vector<target> interval_tree_wrapper::find_point(const std::string& key) {
-  std::vector<target> targets;
-  //auto overlapped_intervals = intervals.intervals();
   mem_reads_ += std::log((double) size_);
   auto overlapped_intervals = intervals.findIntervalsContainPoint(key);
+  std::vector<target> targets;
+  targets.reserve(overlapped_intervals.size());
   for (const auto& overlapped_interval : overlapped_intervals) {
     mem_reads_++;
+    uint64_t file_id = overlapped_interval.value.file_id_;
+    if (leveldb::sst_filter.count(file_id) == 0
+        || !(leveldb::sst_filter[file_id]->contains(key))) {
+      continue;
+    }
     targets.push_back(overlapped_interval.value);
   }
   // std::cout << "Target Size: " << targets.size() << std::endl;

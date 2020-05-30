@@ -150,13 +150,25 @@ public:
     files_to_delete_.clear();
   }
 
-  uint64_t get_size() { return size_; }
+  uint64_t get_size() {
+    return size_;
+  }
 
-  uint64_t get_mem_reads() { return mem_reads_; }
-  void reset_mem_reads() { mem_reads_ = 0; }
+  uint64_t get_mem_reads() {
+    return mem_reads_;
+  }
 
-  uint64_t get_mem_writes() { return mem_writes_; }
-  void reset_mem_writes() { mem_writes_ = 0; }
+  void reset_mem_reads() {
+    mem_reads_ = 0;
+  }
+
+  uint64_t get_mem_writes() {
+    return mem_writes_;
+  }
+
+  void reset_mem_writes() {
+    mem_writes_ = 0;
+  }
 
 
 private:

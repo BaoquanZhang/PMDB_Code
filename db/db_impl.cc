@@ -1300,11 +1300,7 @@ Status DBImpl::GetFromInterval(
     // search the blocks backwards to find the newest version
     auto sst_offset = targets[i];
     // find an entry in the global index
-    uint64_t file_id = sst_offset.file_id_;
-    if (sst_filter.count(file_id) == 0
-        || !(sst_filter[file_id]->contains(key.data(), 16))) {
-      continue;
-    }
+    uint64_t file_id = targets[i].file_id_;
     std::string fname = TableFileName(dbname_, file_id);
     uint64_t file_size;
     s = env_->GetFileSize(fname, &file_size);
@@ -1323,8 +1319,8 @@ Status DBImpl::GetFromInterval(
     // read a block in the file by its offset
     // the content of the block will be stored in BlockContents
     BlockHandle block_handle;
-    block_handle.set_offset(sst_offset.block_offset_);
-    block_handle.set_size(sst_offset.block_size_);
+    block_handle.set_offset(targets[i].block_offset_);
+    block_handle.set_size(targets[i].block_size_);
     BlockContents block_contents;
     s = ReadBlock(file, options, block_handle, &block_contents);
     cur_reads++;

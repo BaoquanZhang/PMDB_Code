@@ -117,7 +117,8 @@ static const char* FLAGS_db = nullptr;
 static int FLAGS_partitions = 0;
 
 // the length of the range query
-static int FLAGS_range_len = 48;
+int FLAGS_short_range_len = 48;
+int FLAGS_long_range_len = 1024;
 
 namespace leveldb {
 
@@ -496,10 +497,9 @@ class Benchmark {
       } else if (name == Slice("seekrandom")) {
         method = &Benchmark::SeekRandom;
       } else if (name == Slice("shortrange")) {
-        method = &Benchmark::RangeRandom;
+        method = &Benchmark::ShortRange;
       } else if (name == Slice("longrange")) {
-        FLAGS_range_len = 1000;
-        method = &Benchmark::RangeRandom;
+        method = &Benchmark::LongRange;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -852,17 +852,26 @@ class Benchmark {
     thread->stats.AddMessage(msg);
   }
 
-  void RangeRandom(ThreadState* thread) {
+  void ShortRange(ThreadState* thread) {
+    RangeRandom(thread, true);
+  }
+
+  void LongRange(ThreadState* thread) {
+    RangeRandom(thread, false);
+  }
+
+  void RangeRandom(ThreadState* thread, bool isShortRange) {
     ReadOptions options;
+    int range_len = isShortRange ? FLAGS_short_range_len : FLAGS_long_range_len;
     int found = 0;
-    for (int i = 0; i < reads_; i++) {
+    for (int i = 0; i < reads_ / range_len; i++) {
       Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
       iter->Seek(key);
       int next_count = 0;
-      while (iter->Valid() && next_count < FLAGS_range_len) {
+      while (iter->Valid() && next_count < range_len) {
         iter->key();
         iter->value();
         next_count++;
@@ -1013,8 +1022,10 @@ int main(int argc, char** argv) {
       FLAGS_open_files = n;
     } else if (sscanf(argv[i], "--range_compaction_io=%d%c", &n, &junk) == 1) {
       FLAGS_range_io = n;
-    } else if (sscanf(argv[i], "--range_len=%d%c", &n, &junk) == 1) {
-      FLAGS_range_len = n;
+    } else if (sscanf(argv[i], "--short_range_len=%d%c", &n, &junk) == 1) {
+      FLAGS_short_range_len = n;
+    } else if (sscanf(argv[i], "--long_range_len=%d%c", &n, &junk) == 1) {
+      FLAGS_long_range_len = n;
     } else if (sscanf(argv[i], "--partition_counts=%d%c", &n, &junk) == 1) {
       FLAGS_partitions = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
