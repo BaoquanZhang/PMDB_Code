@@ -7,6 +7,8 @@
 
 #include "intervaltree.h"
 
+#include <atomic>
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include <mutex>
