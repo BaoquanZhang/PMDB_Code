@@ -1402,13 +1402,15 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
       // get from l0
       std::string key_str = lkey.internal_key().ToString().substr(0, 16);
       auto partition = partitions.lower_bound(key_str);
-      partition->second->lock();
-      s = GetFromInterval(options, partition->second, lkey.internal_key(), value);
-      partition->second->unlock();
+      if (partition != partitions.end() && partition->second) {
+        partition->second->lock();
+        s = GetFromInterval(options, partition->second, lkey.internal_key(), value);
+        partition->second->unlock();
+      }
       // get from disjoint range
       if (!s.ok()) {
         auto disjoint_it = disjoint_ranges.lower_bound(key_str);
-        if (disjoint_it != disjoint_ranges.end()) {
+        if (disjoint_it != disjoint_ranges.end() && disjoint_it->second) {
           disjoint_it->second->lock();
           s = GetFromInterval(options, disjoint_it->second, lkey.internal_key(), value);
           disjoint_it->second->unlock();

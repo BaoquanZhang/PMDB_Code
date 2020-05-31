@@ -116,6 +116,8 @@ static const char* FLAGS_db = nullptr;
 
 static int FLAGS_partitions = 0;
 
+static double FLAGS_write_ratio = 0.8;
+
 // the length of the range query
 int FLAGS_short_range_len = 48;
 int FLAGS_long_range_len = 1024;
@@ -500,6 +502,8 @@ class Benchmark {
         method = &Benchmark::ShortRange;
       } else if (name == Slice("longrange")) {
         method = &Benchmark::LongRange;
+      } else if (name == Slice("readwrite")) {
+        method = &Benchmark::ReadWrite;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -756,6 +760,44 @@ class Benchmark {
         thread->stats.FinishedSingleOp();
       }
       s = db_->Write(write_options_, &batch);
+      if (!s.ok()) {
+        fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+        exit(1);
+      }
+    }
+    thread->stats.AddBytes(bytes);
+  }
+
+  void ReadWrite(ThreadState* thread) {
+    double write_ratio = FLAGS_write_ratio;
+    DoReadWrite(thread, write_ratio);
+  }
+
+  void DoReadWrite(ThreadState* thread, double write_ratio) {
+    if (num_ != FLAGS_num) {
+      char msg[100];
+      snprintf(msg, sizeof(msg), "(%d ops)", num_);
+      thread->stats.AddMessage(msg);
+    }
+
+    RandomGenerator gen;
+    Status s;
+    int64_t bytes = 0;
+    std::string value;
+    ReadOptions options;
+    for (int i = 0; i < num_;) {
+      bool is_write_ = (thread->rand.Next() % 100) <= (write_ratio * 100);
+      const uint64_t k = (thread->rand.Next() % FLAGS_num);
+      char key[100];
+      snprintf(key, sizeof(key), "%016lld", k);
+      if (is_write_) {
+        db_->Put(write_options_, key, gen.Generate(value_size_));
+        i++;
+      } else {
+        db_->Get(options, key, &value);
+      }
+      bytes += value_size_ + strlen(key);
+      thread->stats.FinishedSingleOp();
       if (!s.ok()) {
         fprintf(stderr, "put error: %s\n", s.ToString().c_str());
         exit(1);
@@ -1028,6 +1070,8 @@ int main(int argc, char** argv) {
       FLAGS_long_range_len = n;
     } else if (sscanf(argv[i], "--partition_counts=%d%c", &n, &junk) == 1) {
       FLAGS_partitions = n;
+    } else if (sscanf(argv[i], "--write_ratio=%lf%c", &d, &junk) == 1) {
+      FLAGS_write_ratio = d;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {
