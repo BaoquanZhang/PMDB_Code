@@ -94,7 +94,9 @@ namespace leveldb {
       for(auto file_id_it = unique_file_id.begin(); file_id_it != unique_file_id.end(); file_id_it++){
         FileMetaData* f; //find meta data by sst_id
         f = find_filemeta((*file_id_it),files_);
-        candidate_list_ssts[*file_id_it]=f;
+        if(f){
+          candidate_list_ssts[*file_id_it]=f;
+        }
         mem_reads_++;
       }
     }

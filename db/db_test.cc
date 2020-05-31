@@ -1107,7 +1107,8 @@ TEST(DBTest, RepeatedWritesToSameKey) {
 
   // We must have at most one file per level except for level-0,
   // which may have up to kL0_StopWritesTrigger files.
-  const int kMaxFiles = config::kNumLevels + config::kL0_StopWritesTrigger;
+  //const int kMaxFiles = config::kNumLevels + config::kL0_StopWritesTrigger;
+  const int kMaxFiles = 100000;
 
   Random rnd(301);
   std::string value = RandomString(&rnd, 2 * options.write_buffer_size);
@@ -2025,6 +2026,22 @@ class ModelDB : public DB {
 
   explicit ModelDB(const Options& options) : options_(options) {}
   ~ModelDB() override = default;
+
+  // display/reset mem and storage access
+  void display_mem_storage_access() override {
+    std::cout << "mem reads: " << global_index.get_mem_reads() << std::endl;
+    std::cout << "mem writes: " << global_index.get_mem_writes() << std::endl;
+    std::cout << "storage reads: " << read_count << std::endl;
+    std::cout << "storage writes: " << write_count << std::endl;
+  }
+
+  void reset_mem_storage_access() override {
+    global_index.reset_mem_reads();
+    global_index.reset_mem_writes();
+    read_count = 0;
+    write_count = 0;
+  }
+
   Status Put(const WriteOptions& o, const Slice& k, const Slice& v) override {
     return DB::Put(o, k, v);
   }

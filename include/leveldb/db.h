@@ -30,7 +30,7 @@ extern std::atomic<uint64_t> read_count;
 extern std::unordered_map<uint64_t,std::pair<uint64_t, uint64_t>> sst_valid_key;
 static const int liveratio_threshold = 2;
 static const int leafnodescan_threshold = 10;
-static const int candidate_list_size = 10;
+static const int candidate_list_size = 15;
 //based on two factors: (we temporaly set a fixed #)
 //1)ave # of keys stored in single sst, 2) # of ssts to scan at once
 static const int scan_keynum = 20;
