@@ -17,6 +17,9 @@
 
 #include "port/thread_annotations.h"
 
+#define NVM_WRITE_LATENCY_NS 500
+#define NVM_READ_LATENCY_NS 200
+
 struct interval {
   interval(std::string start, std::string end) {
     start_ = start;
@@ -53,7 +56,11 @@ struct target {
 
 class interval_tree_wrapper {
 public:
-  interval_tree_wrapper() : max_overlap_count(0), is_split_(false) {}
+  interval_tree_wrapper()
+    : max_overlap_count(0),
+      is_split_(false),
+      NVM_read_latency_(NVM_READ_LATENCY_NS),
+      NVM_write_latency_(NVM_WRITE_LATENCY_NS){}
   /*
    * Add an interval to the interval tree
    * @paras:
@@ -192,6 +199,8 @@ private:
   std::atomic<uint64_t> size_{0};
   std::atomic<uint64_t> mem_reads_{0};
   std::atomic<uint64_t> mem_writes_{0};
+  uint64_t NVM_write_latency_;
+  uint64_t NVM_read_latency_;
 };
 
 #endif //LEVELDB_INTERVAL_TREE_WRAPPER_H

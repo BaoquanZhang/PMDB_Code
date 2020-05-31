@@ -4,6 +4,9 @@
 #include "interval_tree_wrapper.h"
 #include "leveldb/db.h"
 
+#include <chrono>
+#include <thread>
+
 void interval_tree_wrapper::add_interval(
     const std::string& start_key, const std::string& end_key,
     uint64_t sst, uint64_t offset, uint64_t block_size) {
@@ -11,7 +14,11 @@ void interval_tree_wrapper::add_interval(
   std::string start_str = start_key.substr(0, 16);
   std::string end_str = end_key.substr(0, 16);
   target cur_target(sst, offset, block_size);
-  mem_reads_ += std::log((double)size_);
+  uint64_t current_reads = std::log((double)size_);
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(NVM_read_latency_ * current_reads)
+      + std::chrono::nanoseconds(NVM_write_latency_));
+  mem_reads_ += current_reads;
   mem_writes_++;
   intervals.insert({start_str, end_str, cur_target});
   files.emplace(sst);
@@ -31,7 +38,8 @@ std::vector<target> interval_tree_wrapper::find_overlap(
 }
 
 std::vector<target> interval_tree_wrapper::find_point(const std::string& key) {
-  mem_reads_ += std::log((double) size_);
+  uint64_t current_reads = std::log((double) size_);
+  mem_reads_ += current_reads;
   auto overlapped_intervals = intervals.findIntervalsContainPoint(key);
   std::vector<target> targets;
   targets.reserve(overlapped_intervals.size());
@@ -44,6 +52,8 @@ std::vector<target> interval_tree_wrapper::find_point(const std::string& key) {
     }
     targets.push_back(overlapped_interval.value);
   }
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(NVM_read_latency_ * current_reads));
   // std::cout << "Target Size: " << targets.size() << std::endl;
   return targets;
 }
@@ -51,6 +61,10 @@ std::vector<target> interval_tree_wrapper::find_point(const std::string& key) {
 void interval_tree_wrapper::clear() {
   files.clear();
   intervals.clear();
+  size_ = 0;
+  reset_mem_reads();
+  reset_mem_writes();
+  reset_overlap();
 }
 
 void interval_tree_wrapper::lock() {
