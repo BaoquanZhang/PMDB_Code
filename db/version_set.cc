@@ -1318,7 +1318,7 @@ Compaction* VersionSet::PickCompaction() {
       overlap_ratio[i][j] = -1;
     }
   }
-
+  c->inputs_[0].clear();
   int i = 0;
   for(const auto& s : candidate_list_ssts ){
       //total_ratio.push_back(0);
