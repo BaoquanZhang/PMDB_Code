@@ -1320,18 +1320,18 @@ Compaction* VersionSet::PickCompaction() {
   }
   c->inputs_[0].clear();
   int i = 0;
-  for(const auto& s : candidate_list_ssts ){
-      //total_ratio.push_back(0);
-      //ssts.push_back(s->first);
-      int j = 0;
-      std::vector<int> overlap_ssts;
-      InternalKey s_largest = s.second->largest;
-      InternalKey s_smallest = s.second->smallest;
-      for(const auto& t : candidate_list_ssts ){
-            InternalKey t_largest =  t.second->largest;
-            InternalKey t_smallest = t.second->smallest;
-            InternalKey st_ll,st_ls,st_sl,st_ss;
-            //calculate overlap ratio
+  for (const auto& s : candidate_list_ssts) {
+    // total_ratio.push_back(0);
+    // ssts.push_back(s->first);
+    int j = 0;
+    std::vector<int> overlap_ssts;
+    InternalKey s_largest = s.second->largest;
+    InternalKey s_smallest = s.second->smallest;
+    for (const auto& t : candidate_list_ssts) {
+      InternalKey t_largest = t.second->largest;
+      InternalKey t_smallest = t.second->smallest;
+      InternalKey st_ll, st_ls, st_sl, st_ss;
+      //calculate overlap ratio
             st_ls = (icmp_.Compare(s_largest.Encode(),t_largest.Encode())<0)?s_largest:t_largest;
             st_ll = (icmp_.Compare(s_largest.Encode(),t_largest.Encode())<0)?t_largest:s_largest;
             st_ss = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?s_smallest:t_smallest;
@@ -1351,7 +1351,7 @@ Compaction* VersionSet::PickCompaction() {
             total_ratio[i] += overlap_ratio[i][j];
             j++;
       }
-      ssts.push_back(std::make_pair(s.first, overlap_ssts));
+      ssts.emplace_back(s.first, overlap_ssts);
       i++;
   }
   double max_overlap = 	std::numeric_limits<double>::min();
@@ -1381,8 +1381,7 @@ Compaction* VersionSet::PickCompaction() {
     c->inputs_[0].emplace_back(f);
     //candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
     input_size++;
-    if (input_size == 20)
-      break;
+    if (input_size >= 20) break;
   }
   mtx_.Unlock();
   c->input_version_ = current_;

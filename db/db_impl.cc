@@ -753,12 +753,14 @@ void DBImpl::BackgroundCompaction() {
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
+    mtx_.Lock();
+    for (uint64_t i = 0; i <= c->num_input_files(0); i++) {
+      candidate_list_ssts.erase(c->input(0, i)->number);
+    }
+    mtx_.Unlock();
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
-    mtx_.Lock();
-    candidate_list_ssts.clear();
-    mtx_.Unlock();
   }
   delete c;
 
@@ -1489,8 +1491,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // Yield previous error
       s = bg_error_;
       break;
-    } else if (allow_delay
-              && sst_count_in_candidate >= candidate_list_size / 2) {
+    } else if (allow_delay &&
+               sst_count_in_candidate >= leafnodescan_threshold) {
       // It there are too many ssts in the candidate list, the write process
       // will be delayed.
       mutex_.Unlock();

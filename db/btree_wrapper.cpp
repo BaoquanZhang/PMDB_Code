@@ -83,7 +83,8 @@ namespace leveldb {
                                           std::vector<FileMetaData*>** files_) {
     if (global_tree.size() == 0) return "";
     std::unordered_set<int> unique_file_id;
-    auto it = global_tree.upper_bound(cur_key);
+    auto it = global_tree.begin();
+    if (!cur_key.empty()) it = global_tree.upper_bound(cur_key);
     mem_reads_ += std::log(global_tree.size());
     // auto it = global_tree.begin();
     std::string next_key;
@@ -102,8 +103,8 @@ namespace leveldb {
           }
           mem_reads_++;
         }
+        break;
       }
-      if (candidate_list_ssts.size() >= candidate_list_size) break;
       unique_file_id.clear();
     }
     mtx_.Unlock();
