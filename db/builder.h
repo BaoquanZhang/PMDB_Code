@@ -6,6 +6,8 @@
 #define STORAGE_LEVELDB_DB_BUILDER_H_
 
 #include "leveldb/status.h"
+#include <unordered_map>
+#include <vector>
 
 namespace leveldb {
 

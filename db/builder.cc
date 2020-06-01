@@ -12,8 +12,6 @@
 #include "leveldb/env.h"
 #include "leveldb/iterator.h"
 #include "btree_wrapper.h"
-#include <unordered_map>
-#include <vector>
 
 namespace leveldb {
 std::atomic<uint64_t> write_count{0};
