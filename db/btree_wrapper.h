@@ -7,6 +7,8 @@
 
 #include "btree_map.h"
 #include <vector>
+#include <atomic>
+#include <cmath>
 
 /* btree wrapper function
  * We can wrap interfaces, e.g. adding NVM latency, adding

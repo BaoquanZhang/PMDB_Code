@@ -10,9 +10,6 @@
 #include "db/version_set.h"
 #include "db/db_impl.h"
 
-#include <atomic>
-#include <cmath>
-
 namespace leveldb {
 
   FileMetaData* find_filemeta(uint64_t sid, std::vector<FileMetaData*>** files_){
