@@ -1585,8 +1585,8 @@ void VersionSet::LeafNodeScan(){
   std::vector<FileMetaData*>* files_ ;
   files_ = current_->filemeta();
   std::string current_key = global_index.getCurrentKey();
-  uint64_t scan_key_num = options_->max_file_size * 10;
-  std::string next_key = global_index.scanLeafnode(current_key, scan_key_num, &files_);
+  std::string next_key =
+      global_index.scanLeafnode(current_key, scan_keynum, &files_);
   global_index.setCurrentKey(next_key);
 }
 

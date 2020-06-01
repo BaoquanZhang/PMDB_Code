@@ -50,7 +50,8 @@ namespace leveldb {
       return global_tree.size();
     };
 
-    std::string scanLeafnode(std::string cur_key, int num,std::vector<FileMetaData*>** files_);
+    std::string scanLeafnode(std::string cur_key, uint64_t num,
+                             std::vector<FileMetaData*>** files_);
 
     uint64_t findSid(std::string key);
 
