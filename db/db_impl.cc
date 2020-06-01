@@ -533,9 +533,9 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   if (s.ok() && meta.file_size > 0) {
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
-    if (base != nullptr) {
-      level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
-    }
+    //if (base != nullptr) {
+    //  level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
+    //}
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
   }
@@ -1489,7 +1489,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // Yield previous error
       s = bg_error_;
       break;
-    } else if (allow_delay && sst_count_in_candidate >= candidate_list_size) {
+    } else if (allow_delay
+              && sst_count_in_candidate >= candidate_list_size / 2) {
       // It there are too many ssts in the candidate list, the write process
       // will be delayed.
       mutex_.Unlock();

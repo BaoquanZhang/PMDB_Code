@@ -1375,10 +1375,14 @@ Compaction* VersionSet::PickCompaction() {
 
   //candidate_list_ssts.erase(candidate_list_ssts.find(sid));
   assert(!c->inputs_[0].empty());
+  int input_size = 1;
   for(auto it = sids.begin(); it != sids.end(); it++){
     f = candidate_list_ssts[(*it)];
-    c->inputs_[0].push_back(f);
+    c->inputs_[0].emplace_back(f);
     //candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
+    input_size++;
+    if (input_size == 20)
+      break;
   }
   mtx_.Unlock();
   c->input_version_ = current_;
