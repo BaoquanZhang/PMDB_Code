@@ -1491,8 +1491,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // Yield previous error
       s = bg_error_;
       break;
-    } else if (allow_delay &&
-               sst_count_in_candidate >= leafnodescan_threshold) {
+    } else if (allow_delay && sst_count_in_candidate >= candidate_list_size) {
       // It there are too many ssts in the candidate list, the write process
       // will be delayed.
       mutex_.Unlock();
