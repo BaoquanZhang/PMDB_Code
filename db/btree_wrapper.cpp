@@ -103,7 +103,6 @@ namespace leveldb {
           }
           mem_reads_++;
         }
-        break;
       }
       unique_file_id.clear();
     }
