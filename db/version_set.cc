@@ -1319,15 +1319,7 @@ Compaction* VersionSet::PickCompaction() {
     }
   }
 
-
   int i = 0;
-  /* 05.26.2020 By Baoquan
-   * I have questions on the following logic.
-   * Besides, in my opinions, all SST files in the compaction candidate list will be selected
-   * in most cases. Therefore, I temorarily comment out the computation process of overlap ratio.
-   * Currently, I select all SSTs in the compaction candidate list.
-   * */
-
   for(const auto& s : candidate_list_ssts ){
       //total_ratio.push_back(0);
       //ssts.push_back(s->first);
@@ -1385,7 +1377,7 @@ Compaction* VersionSet::PickCompaction() {
   assert(!c->inputs_[0].empty());
   for(auto it = sids.begin(); it != sids.end(); it++){
     f = candidate_list_ssts[(*it)];
-    c->inputs_[1].push_back(f);
+    c->inputs_[0].push_back(f);
     //candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
   }
   mtx_.Unlock();
