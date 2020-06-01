@@ -82,12 +82,12 @@ namespace leveldb {
     if (global_tree.size() == 0)
       return "";
     std::unordered_set<int> unique_file_id;
-    auto it = global_tree.upper_bound(cur_key);
+    //auto it = global_tree.upper_bound(cur_key);
     mem_reads_ += std::log(global_tree.size());
-    //auto it = global_tree.begin();
-    //auto it = global_tree.find(cur_key);
+    auto it = global_tree.begin();
     std::string next_key;
     mtx_.Lock();
+    while (it != global_tree.end()) {
       for (int i = 0; i < num && it != global_tree.end(); it++, i++) {
         unique_file_id.emplace(it->second.first);
       }
@@ -104,8 +104,8 @@ namespace leveldb {
         }
       }
       unique_file_id.clear();
+    }
     mtx_.Unlock();
-    
     next_key = (it == global_tree.end()) ? global_tree.begin()->first : it->first;
     return next_key;
   }
