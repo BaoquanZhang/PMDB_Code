@@ -736,7 +736,7 @@ void DBImpl::BackgroundCompaction() {
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
     c->edit()->DeleteFile(c->level(), f->number);
-     c->edit()->AddFile(c->level(), f->number, f->file_size, f->smallest,
+    c->edit()->AddFile(c->level(), f->number, f->file_size, f->smallest,
                        f->largest);
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
@@ -754,9 +754,7 @@ void DBImpl::BackgroundCompaction() {
       RecordBackgroundError(status);
     }
     mtx_.Lock();
-    for (uint64_t i = 0; i <= c->num_input_files(0); i++) {
-      candidate_list_ssts.erase(c->input(0, i)->number);
-    }
+    candidate_list_ssts.clear();
     mtx_.Unlock();
     CleanupCompaction(compact);
     c->ReleaseInputs();
