@@ -4,28 +4,28 @@
 
 #include "db/version_set.h"
 
-#include <algorithm>
-
 #include "db/btree_wrapper.h"
 #include "db/filename.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
-#include "db/memtable.h"
 #include "db/table_cache.h"
+#include <algorithm>
+#include <limits>
+#include <stdlib.h>
+#include <unordered_set>
+
 #include "leveldb/env.h"
 #include "leveldb/table_builder.h"
+
 #include "table/merger.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 #include "util/logging.h"
 
-#include <iostream>
-#include <limits>
-#include <stdlib.h>
 namespace leveldb {
 
-  port::Mutex mtx_;
-  std::map<uint64_t,FileMetaData*> candidate_list_ssts GUARDED_BY(mtx_);
+port::Mutex mtx_;
+std::unordered_set<uint64_t> candidate_list_ssts GUARDED_BY(mtx_);
 
 static size_t TargetFileSize(const Options* options) {
   return options->max_file_size;
@@ -500,6 +500,7 @@ int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key,
       level++;
     }
   }
+  level = 0;
   return level;
 }
 
@@ -1036,7 +1037,6 @@ void VersionSet::Finalize(Version* v) {
   // Precomputed best level for next compaction
   v->compaction_level_ = 0;
   LeafNodeScan();
-
   /* legacy logic to determine the compaction level
   int best_level = -1;
   double best_score = -1;
@@ -1306,53 +1306,70 @@ Compaction* VersionSet::PickCompaction() {
   int list_size = 0;
   mtx_.Lock();
   list_size = candidate_list_ssts.size();
-  std::vector< std::vector <double> > overlap_ratio(list_size,std::vector<double>(list_size));
+  std::vector<std::vector<double> > overlap_ratio(
+      list_size, std::vector<double>(list_size));
   Compaction* c = nullptr;
   int level = 0;
   c = new Compaction(options_, level);
-  std::vector<std::pair<int,std::vector<int> > > ssts;
-  std::vector <double> total_ratio;
-  for(int i = 0; i < list_size; i++){
+  std::vector<std::pair<uint64_t, std::vector<uint64_t> > > ssts;
+  std::vector<double> total_ratio;
+  for (int i = 0; i < list_size; i++) {
     total_ratio.push_back(0);
-    for(int j = 0; j < list_size; j++){
+    for (int j = 0; j < list_size; j++) {
       overlap_ratio[i][j] = -1;
     }
   }
   c->inputs_[0].clear();
   int i = 0;
-  for (const auto& s : candidate_list_ssts) {
-    // total_ratio.push_back(0);
-    // ssts.push_back(s->first);
+  std::map<uint64_t, FileMetaData*> candidate_meta_map;
+  for (const auto& cur_candidate : candidate_list_ssts) {
+    FileMetaData* cur_file_meta = find_filemeta(cur_candidate, current_);
+    assert(cur_file_meta != nullptr);
+    candidate_meta_map[cur_candidate] = cur_file_meta;
+  }
+  for (const auto& cur_candidate : candidate_list_ssts) {
     int j = 0;
-    std::vector<int> overlap_ssts;
-    InternalKey s_largest = s.second->largest;
-    InternalKey s_smallest = s.second->smallest;
-    for (const auto& t : candidate_list_ssts) {
-      InternalKey t_largest = t.second->largest;
-      InternalKey t_smallest = t.second->smallest;
-      InternalKey st_ll, st_ls, st_sl, st_ss;
-      //calculate overlap ratio
-            st_ls = (icmp_.Compare(s_largest.Encode(),t_largest.Encode())<0)?s_largest:t_largest;
-            st_ll = (icmp_.Compare(s_largest.Encode(),t_largest.Encode())<0)?t_largest:s_largest;
-            st_ss = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?s_smallest:t_smallest;
-            st_sl = (icmp_.Compare(s_smallest.Encode(),t_smallest.Encode())<0)?t_smallest:s_smallest;
-
-            double int_ll =  std::atof(st_ll.user_key().data());
-            double int_ls =  std::atof(st_ls.user_key().data());
-            double int_sl =  std::atof(st_sl.user_key().data());
-            double int_ss =  std::atof(st_ss.user_key().data());
-            // (st_ls - st_sl)/(st_ll - st_ss)
-            overlap_ratio[i][j] = (double) ((int_ls - int_sl) / (int_ll - int_ss));
-            if(overlap_ratio[i][j] < 0){
-              overlap_ratio[i][j] = 0;
-            }else if(t != s){
-              overlap_ssts.push_back(t.first);
-            }
-            total_ratio[i] += overlap_ratio[i][j];
-            j++;
+    std::vector<uint64_t> overlap_ssts;
+    auto cur_candidate_meta = candidate_meta_map[cur_candidate];
+    assert(cur_candidate_meta);
+    Slice cur_candidate_largest = cur_candidate_meta->largest.user_key();
+    Slice cur_candidate_smallest = cur_candidate_meta->smallest.user_key();
+    for (const auto& overlap_candidate : candidate_list_ssts) {
+      auto overlap_candidate_meta = candidate_meta_map[overlap_candidate];
+      Slice overlapp_candidate_largest =
+          overlap_candidate_meta->largest.user_key();
+      Slice overlapp_candidate_smallest =
+          overlap_candidate_meta->smallest.user_key();
+      Slice st_ll, st_ls, st_sl, st_ss;
+      // calculate overlap ratio
+      st_ls = cur_candidate_largest.compare(overlapp_candidate_largest) < 0
+                  ? cur_candidate_largest
+                  : overlapp_candidate_largest;
+      st_ll = cur_candidate_largest.compare(overlapp_candidate_largest) < 0
+                  ? overlapp_candidate_largest
+                  : cur_candidate_largest;
+      st_ss = cur_candidate_smallest.compare(overlapp_candidate_smallest) < 0
+                  ? cur_candidate_smallest
+                  : overlapp_candidate_smallest;
+      st_sl = cur_candidate_smallest.compare(overlapp_candidate_smallest) < 0
+                  ? overlapp_candidate_smallest
+                  : cur_candidate_smallest;
+      double int_ll = std::atof(st_ll.data());
+      double int_ls = std::atof(st_ls.data());
+      double int_sl = std::atof(st_sl.data());
+      double int_ss = std::atof(st_ss.data());
+      // (st_ls - st_sl)/(st_ll - st_ss)
+      overlap_ratio[i][j] = (double)((int_ls - int_sl) / (int_ll - int_ss));
+      if (overlap_ratio[i][j] < 0) {
+        overlap_ratio[i][j] = 0;
+      } else if (cur_candidate != overlap_candidate) {
+        overlap_ssts.push_back(overlap_candidate);
       }
-      ssts.emplace_back(s.first, overlap_ssts);
-      i++;
+      total_ratio[i] += overlap_ratio[i][j];
+      j++;
+    }
+    ssts.emplace_back(cur_candidate, overlap_ssts);
+    i++;
   }
   double max_overlap = 	std::numeric_limits<double>::min();
   int max_idx = -1;
@@ -1363,9 +1380,9 @@ Compaction* VersionSet::PickCompaction() {
     }
   }
   int sid = ssts[max_idx].first;
-  std::vector<int> sids = ssts[max_idx].second;
+  std::vector<uint64_t> sids = ssts[max_idx].second;
   FileMetaData* f;
-  f = candidate_list_ssts[sid];
+  f = candidate_meta_map[sid];
   c->inputs_[0].emplace_back(f);
   /*for (const auto& sst_id_to_compact : candidate_list_ssts) {
     if (sst_id_to_compact.second == nullptr || sst_id_to_compact.first == 0)
@@ -1376,7 +1393,7 @@ Compaction* VersionSet::PickCompaction() {
   //candidate_list_ssts.erase(candidate_list_ssts.find(sid));
   assert(!c->inputs_[0].empty());
   for (auto it = sids.begin(); it != sids.end(); it++) {
-    f = candidate_list_ssts[(*it)];
+    f = candidate_meta_map[(*it)];
     c->inputs_[0].emplace_back(f);
     // candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
   }
@@ -1578,11 +1595,8 @@ Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
 // }
 
 void VersionSet::LeafNodeScan(){
-  std::vector<FileMetaData*>* files_ ;
-  files_ = current_->filemeta();
   std::string current_key = global_index.getCurrentKey();
-  std::string next_key =
-      global_index.scanLeafnode(current_key, scan_keynum, &files_);
+  std::string next_key = global_index.scanLeafnode(current_key, scan_keynum);
   global_index.setCurrentKey(next_key);
 }
 
@@ -1615,11 +1629,15 @@ bool Compaction::IsTrivialMove() const {
 }
 
 void Compaction::AddInputDeletions(VersionEdit* edit) {
+  mtx_.Lock();
   for (int which = 0; which < 2; which++) {
     for (size_t i = 0; i < inputs_[which].size(); i++) {
       edit->DeleteFile(level_ + which, inputs_[which][i]->number);
+      assert(candidate_list_ssts.count(inputs_[which][i]->number) == 1);
+      candidate_list_ssts.erase(inputs_[which][i]->number);
     }
   }
+  mtx_.Unlock();
 }
 
 bool Compaction::IsBaseLevelForKey(const Slice& user_key) {

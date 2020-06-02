@@ -26,6 +26,7 @@ class BlockBuilder;
 class BlockHandle;
 class WritableFile;
 struct FileMetaData;
+class Version;
 
 class LEVELDB_EXPORT TableBuilder {
  public:
@@ -69,7 +70,7 @@ class LEVELDB_EXPORT TableBuilder {
   // constructor after this function returns.
   // REQUIRES: Finish(), Abandon() have not been called
   Status Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
-                                 std::vector<uint64_t> block_offset,std::vector<FileMetaData*>** files_);
+                std::vector<uint64_t> block_offset, Version* v);
   Status Finish();
 
   // Indicate that the contents of this builder should be abandoned.  Stops

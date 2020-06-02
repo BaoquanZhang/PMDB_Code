@@ -60,12 +60,20 @@ class btree_wrapper {
   uint64_t findSid(std::string key);
 
   std::string getCurrentKey() { return cur_key_; }
-  void setCurrentKey(std::string key) { cur_key_ = key; }
+  void setCurrentKey(std::string& cur_key) { cur_key_ = cur_key; }
 
   uint64_t get_mem_reads() { return mem_reads_; }
   void reset_mem_reads() { mem_reads_ = 0; }
   uint64_t get_mem_writes() { return mem_writes_; }
   void reset_mem_writes() { mem_writes_ = 0; }
+
+  // iterator operations
+  void seek_to_first() { cur_iter_ = global_tree.begin(); }
+
+  std::string key() {
+    assert(cur_iter_ != global_tree.end());
+    return cur_iter_.key();
+  }
 
  private:
   btree::btree_map<std::string, std::pair<uint64_t, uint64_t>> global_tree;
@@ -74,6 +82,8 @@ class btree_wrapper {
   std::atomic<uint64_t> mem_writes_{0};
   uint64_t nvm_write_latency_ns_;
   uint64_t nvm_read_latency_ns_;
+  btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator
+      cur_iter_;
 };
 }
 

@@ -40,6 +40,10 @@ struct Options;
 struct ReadOptions;
 struct WriteOptions;
 class WriteBatch;
+struct FileMetaData;
+class Version;
+
+extern FileMetaData* find_filemeta(uint64_t file_id, Version* v);
 
 // Abstract handle to particular state of a DB.
 // A Snapshot is an immutable object and can therefore be safely

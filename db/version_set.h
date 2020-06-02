@@ -21,12 +21,13 @@
 #define SQUENTIALITY_DEGREE_THRESHOLD 4
 */
 
-#include <map>
-#include <set>
-#include <vector>
-
 #include "db/dbformat.h"
 #include "db/version_edit.h"
+#include <map>
+#include <set>
+#include <unordered_set>
+#include <vector>
+
 #include "port/port.h"
 #include "port/thread_annotations.h"
 
@@ -46,7 +47,7 @@ class VersionSet;
 class WritableFile;
 
 extern port::Mutex mtx_;
-extern std::map<uint64_t,FileMetaData*> candidate_list_ssts GUARDED_BY(mtx_);
+extern std::unordered_set<uint64_t> candidate_list_ssts GUARDED_BY(mtx_);
 //add meta file of sst which reach liveratio threshold to candidata list
 //void LiveKeyRatio(uint sst_id);
 

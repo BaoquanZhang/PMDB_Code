@@ -506,7 +506,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   mutex_.AssertHeld();
   const uint64_t start_micros = env_->NowMicros();
   FileMetaData meta;
-  std::vector<FileMetaData*>* files_ ;
+  std::vector<FileMetaData*>* files_;
   files_ = versions_->current()->filemeta();
   meta.number = versions_->NewFileNumber();
   pending_outputs_.insert(meta.number);
@@ -517,7 +517,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
-    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta,&files_);
+    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta, base);
     mutex_.Lock();
   }
 
@@ -533,9 +533,9 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   if (s.ok() && meta.file_size > 0) {
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
-    //if (base != nullptr) {
-    //  level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
-    //}
+    if (base != nullptr) {
+      level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
+    }
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
   }
@@ -753,9 +753,6 @@ void DBImpl::BackgroundCompaction() {
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
-    mtx_.Lock();
-    candidate_list_ssts.clear();
-    mtx_.Unlock();
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
@@ -843,14 +840,11 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
-    std::vector<FileMetaData*>* files_;
     mutex_.Lock();
-    files_ = versions_->current()->filemeta();
+    Version* v = versions_->current();
     mutex_.Unlock();
-    s = compact->builder->Finish(std::move(keys),
-                                 std::move(ssts),
-                                 std::move(block_offset),
-                                 &files_);
+    s = compact->builder->Finish(std::move(keys), std::move(ssts),
+                                 std::move(block_offset), v);
   } else {
     compact->builder->Abandon();
   }
@@ -1048,7 +1042,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       //TODO() Compare the sst_id of the key and sst_id find from B+tree
       //if they are not equal, then the key need to drop
       // In the current implementation, we only keep the first key which can be incorrect.
-      uint64_t key_sid =  global_index.findSid(key.ToString().substr(0, 16));
+      uint64_t key_sid = global_index.findSid(current_user_key);
 
       last_sequence_for_key = ikey.sequence;
     }
@@ -1061,15 +1055,17 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->compaction->IsBaseLevelForKey(ikey.user_key),
         (int)last_sequence_for_key, (int)compact->smallest_snapshot);
 #endif
-    if (!drop) {
+    if (drop) {
+      global_index.erase(current_user_key);
+    } else if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
-        status = OpenCompactionOutputFile(compact);      
+        status = OpenCompactionOutputFile(compact);
         if (!status.ok()) {
           break;
         }
       }
-     
+
       if (compact->builder->NumEntries() == 0) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
