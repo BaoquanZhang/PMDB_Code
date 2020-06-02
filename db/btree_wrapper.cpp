@@ -87,6 +87,7 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   for (uint64_t i = 0; i < keys.size(); i++) {
     entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
   }
+  global_tree.insert(entries.begin(), entries.end());
   std::this_thread::sleep_for(
       std::chrono::nanoseconds(nvm_write_latency_ns_ * keys.size()));
   /*
