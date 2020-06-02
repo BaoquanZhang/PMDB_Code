@@ -80,9 +80,11 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   uint64_t cur_reads = std::log(global_tree.size());
   std::this_thread::sleep_for(
       std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
+  std::cout << "adding index" << std::endl;
   for (uint64_t i = 0; i < keys.size(); i++) {
     insertKey(keys[i], ssts[i], blocks[i]);
   }
+  std::cout << "add index done" << std::endl;
 }
 
 // TODO() what if key is not exist? should use the next key no less than
