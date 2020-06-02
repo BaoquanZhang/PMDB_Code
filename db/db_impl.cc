@@ -660,7 +660,6 @@ void DBImpl::RecordBackgroundError(const Status& s) {
 
 void DBImpl::MaybeScheduleCompaction() {
   mutex_.AssertHeld();
-  versions_->LeafNodeScan();
   uint64_t sst_candidate_size = candidate_list_ssts.size();
   if (background_compaction_scheduled_) {
     // Already scheduled
