@@ -53,7 +53,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
     }
 
     // Finish and check for builder errors
-    s = builder->Finish();
+    s = builder->Finish(keys, ssts, blocks);
     if (s.ok()) {
       meta->file_size = builder->FileSize();
       assert(meta->file_size > 0);

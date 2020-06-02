@@ -826,7 +826,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
     Version* v = versions_->current();
     mutex_.Unlock();
     s = compact->builder->Finish(std::move(keys), std::move(ssts),
-                                 std::move(block_offset), v);
+                                 std::move(block_offset));
   } else {
     compact->builder->Abandon();
   }

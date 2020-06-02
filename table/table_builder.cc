@@ -235,7 +235,7 @@ Status TableBuilder::status() const { return rep_->status; }
 
 Status TableBuilder::Finish(std::vector<std::string> keys,
                             std::vector<uint64_t> ssts,
-                            std::vector<uint64_t> block_offset, Version* v) {
+                            std::vector<uint64_t> block_offset) {
   Rep* r = rep_;
   Flush();
   assert(!r->closed);

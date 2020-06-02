@@ -70,7 +70,7 @@ class LEVELDB_EXPORT TableBuilder {
   // constructor after this function returns.
   // REQUIRES: Finish(), Abandon() have not been called
   Status Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
-                std::vector<uint64_t> block_offset, Version* v);
+                std::vector<uint64_t> block_offset);
   Status Finish();
 
   // Indicate that the contents of this builder should be abandoned.  Stops

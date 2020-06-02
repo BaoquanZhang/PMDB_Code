@@ -92,18 +92,13 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
   std::unordered_set<int> unique_file_id;
   auto it = global_tree.begin();
   if (!cur_key.empty()) it = global_tree.upper_bound(cur_key);
-  uint64_t cur_reads = std::log(global_tree.size());
-  mem_reads_ += cur_reads;
-  std::this_thread::sleep_for(
-      std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
   // auto it = global_tree.begin();
   std::string next_key;
+  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_read_latency_ns_));
   while (it != global_tree.end()) {
     for (uint64_t i = 0; i < num && it != global_tree.end(); it++, i++) {
       unique_file_id.emplace(it->second.first);
       mem_reads_++;
-      std::this_thread::sleep_for(
-          std::chrono::nanoseconds(nvm_read_latency_ns_));
     }
     if (unique_file_id.size() >= leafnodescan_threshold) {
       candidate_list_ssts.insert(unique_file_id.begin(), unique_file_id.end());
