@@ -60,9 +60,11 @@ void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
     if (liveratio >= liveratio_threshold) {
       candidate_list_ssts.emplace(sst_id);
     }
-    global_tree.erase(it);
+    it->second.first = sst_id;
+    it->second.second = block_offset;
+  } else {
+    global_tree.insert(entry);
   }
-  global_tree.insert(entry);
   mem_writes_++;
   std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_write_latency_ns_));
 }
@@ -73,6 +75,7 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   assert(keys.size() > 0);
   assert(keys.size() == ssts.size());
   assert(keys.size() == blocks.size());
+  std::cout << "adding index" << std::endl;
   std::pair<uint64_t, uint64_t> valid_invalid(keys.size(), 0);
   std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
                                                            valid_invalid);
@@ -80,11 +83,17 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   uint64_t cur_reads = std::log(global_tree.size());
   std::this_thread::sleep_for(
       std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
-  std::cout << "adding index" << std::endl;
+  // for (uint64_t i = 0; i < keys.size(); i++) {
+  //  insertKey(keys[i], ssts[i], blocks[i]);
+  //}
+  std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>>>
+      entries;
+  entries.reserve(keys.size());
   for (uint64_t i = 0; i < keys.size(); i++) {
-    insertKey(keys[i], ssts[i], blocks[i]);
+    entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
   }
-  std::cout << "add index done" << std::endl;
+  global_tree.insert(entries.begin(), entries.end());
+  std::cout << "adding index done" << std::endl;
 }
 
 // TODO() what if key is not exist? should use the next key no less than
