@@ -19,8 +19,7 @@ std::atomic<uint64_t> read_count{0};
 btree_wrapper global_index;
 
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
-                  TableCache* table_cache, Iterator* iter, FileMetaData* meta,
-                  Version* v) {
+                  TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
   Status s;
   meta->file_size = 0;
   iter->SeekToFirst();

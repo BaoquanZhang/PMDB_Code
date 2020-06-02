@@ -24,8 +24,7 @@
 
 namespace leveldb {
 
-port::Mutex mtx_;
-std::unordered_set<uint64_t> candidate_list_ssts GUARDED_BY(mtx_);
+std::unordered_set<uint64_t> candidate_list_ssts;
 
 static size_t TargetFileSize(const Options* options) {
   return options->max_file_size;
@@ -299,7 +298,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   tmp.reserve(files_[0].size());
   for (uint32_t i = 0; i < files_[0].size(); i++) {
     FileMetaData* f = files_[0][i];
-    read_count++;
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
       tmp.push_back(f);
@@ -322,7 +320,6 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
       FileMetaData* f = files_[level][index];
-      read_count++;
       if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
         // All of "f" is past any data for user_key
       } else {
@@ -500,7 +497,6 @@ int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key,
       level++;
     }
   }
-  level = 0;
   return level;
 }
 
@@ -1304,7 +1300,6 @@ Compaction* VersionSet::PickCompaction() {
 
   Compaction* VersionSet::PickCandtListCompaction(){
   int list_size = 0;
-  mtx_.Lock();
   list_size = candidate_list_ssts.size();
   std::vector<std::vector<double> > overlap_ratio(
       list_size, std::vector<double>(list_size));
@@ -1397,7 +1392,6 @@ Compaction* VersionSet::PickCompaction() {
     c->inputs_[0].emplace_back(f);
     // candidate_list_ssts.erase(candidate_list_ssts.find((*it)));
   }
-  mtx_.Unlock();
   c->input_version_ = current_;
   c->input_version_->Ref();
   return c;
@@ -1629,7 +1623,6 @@ bool Compaction::IsTrivialMove() const {
 }
 
 void Compaction::AddInputDeletions(VersionEdit* edit) {
-  mtx_.Lock();
   for (int which = 0; which < 2; which++) {
     for (size_t i = 0; i < inputs_[which].size(); i++) {
       edit->DeleteFile(level_ + which, inputs_[which][i]->number);
@@ -1637,7 +1630,6 @@ void Compaction::AddInputDeletions(VersionEdit* edit) {
       candidate_list_ssts.erase(inputs_[which][i]->number);
     }
   }
-  mtx_.Unlock();
 }
 
 bool Compaction::IsBaseLevelForKey(const Slice& user_key) {

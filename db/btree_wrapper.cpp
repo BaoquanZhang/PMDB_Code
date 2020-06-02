@@ -60,9 +60,7 @@ void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
     sst_valid_key[sid].second--;
     int liveratio = (int)(sst_valid_key[sid].first / sst_valid_key[sid].second);
     if (liveratio >= liveratio_threshold) {
-      mtx_.Lock();
       candidate_list_ssts.emplace(sst_id);
-      mtx_.Unlock();
     }
     global_tree.erase(it);
   }
@@ -81,11 +79,9 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
                                                            valid_invalid);
   sst_valid_key.insert(entry);
-  mtx_.Lock();
   for (uint64_t i = 0; i < keys.size(); i++) {
     insertKey(keys[i], ssts[i], blocks[i]);
   }
-  mtx_.Unlock();
 }
 
 // TODO() what if key is not exist? should use the next key no less than
@@ -101,7 +97,6 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
       std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
   // auto it = global_tree.begin();
   std::string next_key;
-  mtx_.Lock();
   while (it != global_tree.end()) {
     for (uint64_t i = 0; i < num && it != global_tree.end(); it++, i++) {
       unique_file_id.emplace(it->second.first);
@@ -112,14 +107,13 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
     if (unique_file_id.size() >= leafnodescan_threshold) {
       candidate_list_ssts.insert(unique_file_id.begin(), unique_file_id.end());
     }
-      unique_file_id.clear();
-    }
-    mtx_.Unlock();
-    next_key = (it == global_tree.end()) ? global_tree.begin()->first : it->first;
-    return next_key;
+    unique_file_id.clear();
   }
-  
-  uint64_t btree_wrapper::findSid(std::string key){
+  next_key = (it == global_tree.end()) ? global_tree.begin()->first : it->first;
+  return next_key;
+}
+
+uint64_t btree_wrapper::findSid(std::string key){
     auto it = global_tree.find(key);
     if (it == global_tree.end()) {
       return -1;

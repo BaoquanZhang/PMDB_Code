@@ -46,10 +46,7 @@ class Version;
 class VersionSet;
 class WritableFile;
 
-extern port::Mutex mtx_;
-extern std::unordered_set<uint64_t> candidate_list_ssts GUARDED_BY(mtx_);
-//add meta file of sst which reach liveratio threshold to candidata list
-//void LiveKeyRatio(uint sst_id);
+extern std::unordered_set<uint64_t> candidate_list_ssts;
 
 // Return the smallest index i such that files[i]->largest >= key.
 // Return files.size() if there is no such file.
@@ -284,9 +281,7 @@ class VersionSet {
     Version* v = current_;
     return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
     */
-    mtx_.Lock();
     uint64_t current_candidate_size = candidate_list_ssts.size();
-    mtx_.Unlock();
    return (current_candidate_size >= candidate_list_size);
   }
 
