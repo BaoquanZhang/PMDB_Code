@@ -33,7 +33,7 @@ static const int leafnodescan_threshold = 10;
 static const int candidate_list_size = 20;
 // based on two factors: (we temporaly set a fixed #)
 // 1)ave # of keys stored in single sst, 2) # of ssts to scan at once
-static const uint64_t scan_keynum = 4096;
+static const uint64_t scan_keynum = 48;
 
 struct Options;
 struct ReadOptions;
