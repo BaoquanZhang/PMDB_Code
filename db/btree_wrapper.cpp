@@ -78,9 +78,22 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
                                                            valid_invalid);
   sst_valid_key.insert(entry);
+  uint64_t read_counts = std::log(global_tree.size());
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * read_counts));
+  std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>>>
+      entries;
+  entries.reserve(keys.size());
+  for (uint64_t i = 0; i < keys.size(); i++) {
+    entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
+  }
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_write_latency_ns_ * keys.size()));
+  /*
   for (uint64_t i = 0; i < keys.size(); i++) {
     insertKey(keys[i], ssts[i], blocks[i]);
   }
+   */
 }
 
 // TODO() what if key is not exist? should use the next key no less than
@@ -91,8 +104,10 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
   auto it = global_tree.begin();
   if (!cur_key.empty()) it = global_tree.upper_bound(cur_key);
   // auto it = global_tree.begin();
+  uint64_t read_counts = std::log(global_tree.size());
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * read_counts));
   std::string next_key;
-  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_read_latency_ns_));
   while (it != global_tree.end()) {
     for (uint64_t i = 0; i < num && it != global_tree.end(); it++, i++) {
       unique_file_id.emplace(it->second.first);
@@ -110,7 +125,9 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
 
 uint64_t btree_wrapper::findSid(std::string key) {
   auto it = global_tree.find(key);
-  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_read_latency_ns_));
+  uint64_t read_counts = std::log(global_tree.size());
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * read_counts));
   if (it == global_tree.end()) {
     return -1;
   } else {
