@@ -48,10 +48,12 @@ void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
   std::pair<uint64_t, uint64_t> sst_offset(sst_id, block_offset);
   std::pair<const std::string, std::pair<uint64_t, uint64_t>> entry(key,
                                                                     sst_offset);
-  auto it = global_tree.find(key);
+  auto it = global_tree.lower_bound(key);
   uint64_t cur_reads = std::log(global_tree.size());
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
   mem_reads_ += cur_reads;
-  if (it != global_tree.end()) {
+  if (it != global_tree.end() && it->first == key) {
     // update live ratio of sst
     uint64_t sid = it->second.first;
     // sst_live_ratio[sst_id]++;
@@ -63,7 +65,7 @@ void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
     it->second.first = sst_id;
     it->second.second = block_offset;
   } else {
-    global_tree.insert(entry);
+    global_tree.insert(it, entry);
   }
   mem_writes_++;
   std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_write_latency_ns_));
@@ -75,27 +77,13 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   assert(keys.size() > 0);
   assert(keys.size() == ssts.size());
   assert(keys.size() == blocks.size());
-  std::cout << "adding index" << std::endl;
   std::pair<uint64_t, uint64_t> valid_invalid(keys.size(), 0);
   std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
                                                            valid_invalid);
   sst_valid_key.insert(entry);
-  uint64_t cur_reads = std::log(global_tree.size());
-  std::this_thread::sleep_for(
-      std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
-  // for (uint64_t i = 0; i < keys.size(); i++) {
-  //  insertKey(keys[i], ssts[i], blocks[i]);
-  //}
-  std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>>>
-      entries;
-  entries.reserve(keys.size());
   for (uint64_t i = 0; i < keys.size(); i++) {
-    entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
+    insertKey(keys[i], ssts[i], blocks[i]);
   }
-  std::this_thread::sleep_for(
-      std::chrono::nanoseconds(nvm_write_latency_ns_ * entries.size()));
-  global_tree.insert(entries.begin(), entries.end());
-  std::cout << "adding index done" << std::endl;
 }
 
 // TODO() what if key is not exist? should use the next key no less than
