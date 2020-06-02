@@ -3,107 +3,115 @@
 //
 
 #include "btree_wrapper.h"
+
+#include "db/db_impl.h"
+#include "db/version_set.h"
+#include <chrono>
 #include <iostream>
+#include <thread>
 #include <unordered_set>
 
 #include "leveldb/db.h"
-#include "db/version_set.h"
-#include "db/db_impl.h"
 
 namespace leveldb {
 
-  FileMetaData* find_filemeta(uint64_t sid, std::vector<FileMetaData*>** files_){
-    std::vector<FileMetaData*> *fs = *files_;
-    for(int i = 0; i < config::kNumLevels; i++){
-      std::vector<FileMetaData*> tmp = fs[i];
-      for(auto it = tmp.begin(); it != tmp.end(); it++){
-        if((*it)->number == sid ){
-          return (*it);
-        }
+FileMetaData* find_filemeta(uint64_t sid, Version* v) {
+  auto file_metas = v->filemeta();
+  for (int i = 0; i < config::kNumLevels; i++) {
+    for (uint64_t j = 0; j < file_metas[i].size(); j++) {
+      if (file_metas[i][j]->number == sid) {
+        return file_metas[i][j];
       }
     }
-    return nullptr;
   }
+  return nullptr;
+}
 
-  bool btree_wrapper::findKey(std::string key, std::pair<uint64_t, uint64_t>& sst_offset) {
-    mem_reads_ += std::log(global_tree.size());
-    auto it = global_tree.find(key);
-    if (it == global_tree.end()) {
-      return false;
+bool btree_wrapper::findKey(std::string key,
+                            std::pair<uint64_t, uint64_t>& sst_offset) {
+  uint64_t cur_reads = std::log(global_tree.size());
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
+  mem_reads_ += cur_reads;
+  auto it = global_tree.find(key);
+  if (it == global_tree.end()) {
+    return false;
+  }
+  sst_offset = it->second;
+  return true;
+}
+
+void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
+                              uint64_t block_offset) {
+  // insert the key to position
+  // all keys after position will be shift
+  std::pair<uint64_t, uint64_t> sst_offset(sst_id, block_offset);
+  std::pair<const std::string, std::pair<uint64_t, uint64_t>> entry(key,
+                                                                    sst_offset);
+  auto it = global_tree.find(key);
+  uint64_t cur_reads = std::log(global_tree.size());
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
+  mem_reads_ += cur_reads;
+  if (it != global_tree.end()) {
+    // update live ratio of sst
+    uint64_t sid = it->second.first;
+    // sst_live_ratio[sst_id]++;
+    sst_valid_key[sid].second--;
+    int liveratio = (int)(sst_valid_key[sid].first / sst_valid_key[sid].second);
+    if (liveratio >= liveratio_threshold) {
+      mtx_.Lock();
+      candidate_list_ssts.emplace(sst_id);
+      mtx_.Unlock();
     }
-    sst_offset = it->second;
-    return true;
+    global_tree.erase(it);
   }
+  global_tree.insert(entry);
+  mem_writes_++;
+  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_write_latency_ns_));
+}
 
-  void btree_wrapper::insertKey(std::string key, uint64_t sst_id, uint64_t block_offset,std::vector<FileMetaData*>** files_) {
-    // insert the key to position
-    // all keys after position will be shift
-    std::pair<uint64_t, uint64_t> sst_offset(sst_id, block_offset);
-    std::pair<const std::string, std::pair<uint64_t, uint64_t>> entry(key, sst_offset);
-    auto it = global_tree.find(key);
-    if (it != global_tree.end()) {
-      // update live ratio of sst
-      uint64_t sid = it->second.first;
-      //sst_live_ratio[sst_id]++;
-      sst_valid_key[sid].second--;
-      int liveratio = (int)(sst_valid_key[sid].first / sst_valid_key[sid].second);
-      if(liveratio >= liveratio_threshold){
-       FileMetaData* f; //find meta data by sst_id
-       f = find_filemeta(sid,files_);
-       if(f){
-         mtx_.Lock();
-         candidate_list_ssts[sid]=f;
-         mtx_.Unlock();
-       }      
-      }
+void btree_wrapper::insertKeys(std::vector<std::string> keys,
+                               std::vector<uint64_t> ssts,
+                               std::vector<uint64_t> blocks) {
+  assert(keys.size() > 0);
+  assert(keys.size() == ssts.size());
+  assert(keys.size() == blocks.size());
+  std::pair<uint64_t, uint64_t> valid_invalid(keys.size(), 0);
+  std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
+                                                           valid_invalid);
+  sst_valid_key.insert(entry);
+  mtx_.Lock();
+  for (uint64_t i = 0; i < keys.size(); i++) {
+    insertKey(keys[i], ssts[i], blocks[i]);
+  }
+  mtx_.Unlock();
+}
+
+// TODO() what if key is not exist? should use the next key no less than
+// cur_key
+std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
+  if (global_tree.size() == 0) return "";
+  std::unordered_set<int> unique_file_id;
+  auto it = global_tree.begin();
+  if (!cur_key.empty()) it = global_tree.upper_bound(cur_key);
+  uint64_t cur_reads = std::log(global_tree.size());
+  mem_reads_ += cur_reads;
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(nvm_read_latency_ns_ * cur_reads));
+  // auto it = global_tree.begin();
+  std::string next_key;
+  mtx_.Lock();
+  while (it != global_tree.end()) {
+    for (uint64_t i = 0; i < num && it != global_tree.end(); it++, i++) {
+      unique_file_id.emplace(it->second.first);
+      mem_reads_++;
+      std::this_thread::sleep_for(
+          std::chrono::nanoseconds(nvm_read_latency_ns_));
     }
-    mem_writes_++;
-    global_tree.insert(it, entry);
-  }
-
-  void btree_wrapper::insertKeys(std::vector<std::string> keys, std::vector<uint64_t> ssts,
-                                 std::vector<uint64_t> blocks,std::vector<FileMetaData*>** files_) {
-    if (keys.size() == 0)
-      return;
-    assert(keys.size() == ssts.size());
-    assert(keys.size() == blocks.size());
-    std::pair<uint64_t,uint64_t> valid_invalid(keys.size(),0);
-    std::pair<uint64_t,std::pair<uint64_t,uint64_t>> entry(ssts[0],valid_invalid);
-    sst_valid_key.insert(entry);
-    mtx_.Lock();
-    for (uint64_t i = 0; i < keys.size(); i++) {
-      insertKey(keys[i], ssts[i], blocks[i],files_);
+    if (unique_file_id.size() >= leafnodescan_threshold) {
+      candidate_list_ssts.insert(unique_file_id.begin(), unique_file_id.end());
     }
-    mtx_.Unlock();
-  }
-
-  // TODO() what if key is not exist? should use the next key no less than
-  // cur_key
-  std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num,
-                                          std::vector<FileMetaData*>** files_) {
-    if (global_tree.size() == 0) return "";
-    std::unordered_set<int> unique_file_id;
-    auto it = global_tree.begin();
-    if (!cur_key.empty()) it = global_tree.upper_bound(cur_key);
-    mem_reads_ += std::log(global_tree.size());
-    // auto it = global_tree.begin();
-    std::string next_key;
-    mtx_.Lock();
-    while (it != global_tree.end()) {
-      for (uint64_t i = 0; i < num && it != global_tree.end(); it++, i++) {
-        unique_file_id.emplace(it->second.first);
-      }
-      if (unique_file_id.size() >= leafnodescan_threshold) {
-        for (auto file_id_it = unique_file_id.begin();
-             file_id_it != unique_file_id.end(); file_id_it++) {
-          FileMetaData* f;  // find meta data by sst_id
-          f = find_filemeta((*file_id_it), files_);
-          if (f) {
-            candidate_list_ssts[*file_id_it] = f;
-          }
-          mem_reads_++;
-        }
-      }
       unique_file_id.clear();
     }
     mtx_.Unlock();
