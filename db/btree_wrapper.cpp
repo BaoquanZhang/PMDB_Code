@@ -78,23 +78,10 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
                                                            valid_invalid);
   sst_valid_key.insert(entry);
-  uint64_t read_counts = std::log(global_tree.size());
-  std::this_thread::sleep_for(
-      std::chrono::nanoseconds(nvm_read_latency_ns_ * read_counts));
-  std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>>>
-      entries;
-  entries.reserve(keys.size());
-  for (uint64_t i = 0; i < keys.size(); i++) {
-    entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
-  }
-  global_tree.insert(entries.begin(), entries.end());
-  std::this_thread::sleep_for(
-      std::chrono::nanoseconds(nvm_write_latency_ns_ * keys.size()));
-  /*
+
   for (uint64_t i = 0; i < keys.size(); i++) {
     insertKey(keys[i], ssts[i], blocks[i]);
   }
-   */
 }
 
 // TODO() what if key is not exist? should use the next key no less than
