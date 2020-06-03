@@ -87,6 +87,7 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   }
 
   auto it = global_tree.lower_bound(keys[0]);
+  mem_reads_ += std::log(global_tree.size());
   int cur_key_pos = 0;
   while (it != global_tree.end() && cur_key_pos < keys.size()) {
     if (it->first == keys[cur_key_pos]) {
@@ -101,11 +102,13 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
       cur_key_pos++;
       it++;
     }
+    mem_writes_++;
   }
 
   while (cur_key_pos < keys.size()) {
     global_tree.insert(global_tree.end(), entries[cur_key_pos]);
     cur_key_pos++;
+    mem_writes_++;
   }
 
   /*
@@ -148,6 +151,7 @@ uint64_t btree_wrapper::findSid(std::string key) {
   uint64_t read_counts = std::log(global_tree.size());
   std::this_thread::sleep_for(
       std::chrono::nanoseconds(nvm_read_latency_ns_ * read_counts));
+  mem_reads_ += read_counts;
   if (it == global_tree.end()) {
     return -1;
   } else {

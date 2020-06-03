@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData">
+    <serverData>
+      <paths name="mist31 (6cbab44f-db65-45a6-a040-e2dc033da6b9)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/bzhang/SLMDB_CRIS" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
