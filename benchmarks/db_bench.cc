@@ -879,7 +879,7 @@ class Benchmark {
   void RangeRandom(ThreadState* thread) {
     ReadOptions options;
     int found = 0;
-    for (int i = 0; i < reads_; i++) {
+    for (int i = 0; i < reads_ / FLAGS_range_len; i++) {
       Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
