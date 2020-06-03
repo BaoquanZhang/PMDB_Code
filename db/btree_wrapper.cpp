@@ -65,7 +65,6 @@ void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
     global_tree.insert(it, entry);
   }
   mem_writes_++;
-  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_write_latency_ns_));
 }
 
 void btree_wrapper::insertKeys(std::vector<std::string> keys,
@@ -79,9 +78,42 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
                                                            valid_invalid);
   sst_valid_key.insert(entry);
 
+  std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>>>
+      entries;
+  entries.reserve((keys.size()));
+
+  for (uint64_t i = 0; i < keys.size(); i++) {
+    entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
+  }
+
+  auto it = global_tree.lower_bound(keys[0]);
+  int cur_key_pos = 0;
+  while (it != global_tree.end() && cur_key_pos < keys.size()) {
+    if (it->first == keys[cur_key_pos]) {
+      it->second.first = ssts[cur_key_pos];
+      it->second.second = blocks[cur_key_pos];
+      cur_key_pos++;
+      it++;
+    } else if (it->first < keys[cur_key_pos]) {
+      it++;
+    } else {
+      it = global_tree.insert(it, entries[cur_key_pos]);
+      cur_key_pos++;
+      it++;
+    }
+  }
+
+  while (cur_key_pos < keys.size()) {
+    global_tree.insert(global_tree.end(), entries[cur_key_pos]);
+    cur_key_pos++;
+  }
+
+  /*
   for (uint64_t i = 0; i < keys.size(); i++) {
     insertKey(keys[i], ssts[i], blocks[i]);
   }
+  */
+  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_write_latency_ns_));
 }
 
 // TODO() what if key is not exist? should use the next key no less than
