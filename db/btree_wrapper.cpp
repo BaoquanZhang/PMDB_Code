@@ -4,7 +4,7 @@
 
 #include "btree_wrapper.h"
 
-#include "db/db_impl.h"
+#include "db_impl.h"
 #include "db/version_set.h"
 #include <chrono>
 #include <iostream>

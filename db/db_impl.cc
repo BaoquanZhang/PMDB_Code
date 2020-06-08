@@ -1287,15 +1287,16 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
 }
 
 Iterator* DBImpl::NewIterator(const ReadOptions& options) {
-  SequenceNumber latest_snapshot;
-  uint32_t seed;
-  Iterator* iter = NewInternalIterator(options, &latest_snapshot, &seed);
-  return NewDBIterator(this, user_comparator(), iter,
-                       (options.snapshot != nullptr
-                            ? static_cast<const SnapshotImpl*>(options.snapshot)
-                                  ->sequence_number()
-                            : latest_snapshot),
-                       seed);
+  // SequenceNumber latest_snapshot;
+  // uint32_t seed;
+  // Iterator* iter = NewInternalIterator(options, &latest_snapshot, &seed);
+  // return NewDBIterator(this, user_comparator(), iter,
+  //                      (options.snapshot != nullptr
+  //                           ? static_cast<const SnapshotImpl*>(options.snapshot)
+  //                                 ->sequence_number()
+  //                           : latest_snapshot),
+  //                      seed);
+  return NewBtreeIter(this,options);
 }
 
 void DBImpl::RecordReadSample(Slice key) {

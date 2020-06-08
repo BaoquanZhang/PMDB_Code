@@ -9,6 +9,7 @@
 #include <vector>
 #include <atomic>
 #include <cmath>
+#include "leveldb/db.h"
 
 /* btree wrapper function
  * We can wrap interfaces, e.g. adding NVM latency, adding
@@ -18,6 +19,8 @@ namespace leveldb {
 
 #define NVM_WRITE_LATENCY_NS 500
 #define NVM_READ_LATENCY_NS 200
+
+typedef btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator BtreeMapIter;
 
 struct FileMetaData;
 class Version;
@@ -68,11 +71,36 @@ class btree_wrapper {
   void reset_mem_writes() { mem_writes_ = 0; }
 
   // iterator operations
-  void seek_to_first() { cur_iter_ = global_tree.begin(); }
+  // void seek_to_first() { cur_iter_ = global_tree.begin(); }
 
-  std::string key() {
-    assert(cur_iter_ != global_tree.end());
-    return cur_iter_.key();
+  // std::string key() {
+  //   assert(cur_iter_ != global_tree.end());
+  //   return cur_iter_.key();
+  // }
+
+  BtreeMapIter seektoFirst() { return global_tree.begin(); }
+
+  BtreeMapIter seektoEnd() {return global_tree.end(); }
+
+  BtreeMapIter seektoLast() {
+    auto res = global_tree.begin();
+    uint64_t  bsize = global_tree.size();
+    for(int i = 1; i < bsize && res!=global_tree.end(); i++){
+      res++;
+    }
+    return res;
+  }
+
+  Slice key(const BtreeMapIter cur_iter){
+    std::string k;
+    if(cur_iter != global_tree.end()){
+      k = cur_iter->first;
+    }
+    return Slice(k);
+  }
+
+  BtreeMapIter seek(const Slice& target){
+    return global_tree.find(target.data());
   }
 
  private:

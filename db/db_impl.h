@@ -11,6 +11,7 @@
 #include <string>
 
 #include "db/btree_wrapper.h"
+#include "db/btree_iter.h"
 #include "db/dbformat.h"
 #include "db/log_writer.h"
 #include "db/snapshot.h"
@@ -89,6 +90,7 @@ class DBImpl : public DB {
 
  private:
   friend class btree_wrapper;
+  friend class BtreeIter;
   friend class DB;
   struct CompactionState;
   struct Writer;

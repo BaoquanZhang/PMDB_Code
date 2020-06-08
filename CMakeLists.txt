@@ -106,7 +106,7 @@ if(BUILD_SHARED_LIBS)
   add_compile_options(-fvisibility=hidden)
 endif(BUILD_SHARED_LIBS)
 
-add_library(leveldb "" db/btree.h db/btree_wrapper.cpp db/btree_wrapper.h db/btree_map.h db/btree_container.h)
+add_library(leveldb "" db/btree.h db/btree_wrapper.cpp db/btree_wrapper.h db/btree_map.h db/btree_container.h db/btree_iter.h db/btree_iter.cpp)
 target_sources(leveldb
   PRIVATE
     "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
