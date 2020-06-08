@@ -7,10 +7,11 @@
 
 #include "leveldb/db.h"
 #include "leveldb/iterator.h"
-#include "btree_wrapper.h"
-#include "db_impl.h"
-
+#include "db/btree_wrapper.h"
 namespace leveldb{
+
+class DBImpl;
+
 class BtreeIter : public Iterator{
  public:
   BtreeIter(DBImpl* db, const ReadOptions& options) : db_(db),options_(options){}
@@ -33,7 +34,7 @@ class BtreeIter : public Iterator{
   Status status_;
 };
 
-Iterator* NewBtreeIter(DBImpl* db,const ReadOptions& options);
+Iterator* NewBtreeIter(DBImpl* db, const ReadOptions& options);
 
 }
 #endif  // LEVELDB_BTREE_ITER_H

@@ -1296,7 +1296,7 @@ Iterator* DBImpl::NewIterator(const ReadOptions& options) {
   //                                 ->sequence_number()
   //                           : latest_snapshot),
   //                      seed);
-  return NewBtreeIter(this,options);
+  return NewBtreeIter(this, options);
 }
 
 void DBImpl::RecordReadSample(Slice key) {

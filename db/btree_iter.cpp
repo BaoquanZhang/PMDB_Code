@@ -5,9 +5,11 @@
 #include "filename.h"
 #include "table/format.h"
 #include "table/block.h"
+#include "db/db_impl.h"
+
 namespace leveldb{
 Iterator* NewBtreeIter(DBImpl* db,const ReadOptions& options){
-  return new BtreeIter(db,options);
+  return new BtreeIter(db, options);
 }
 
 void BtreeIter::SeekToFirst(){
@@ -89,5 +91,9 @@ Slice BtreeIter::value() const {
     return Slice(value);
   }
   return Slice();
+}
+Status BtreeIter::status() const {
+  // do nothing
+  return Status::OK();
 }
 }
