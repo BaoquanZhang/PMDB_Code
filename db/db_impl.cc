@@ -1024,8 +1024,6 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       //TODO() Compare the sst_id of the key and sst_id find from B+tree
       //if they are not equal, then the key need to drop
       // In the current implementation, we only keep the first key which can be incorrect.
-      uint64_t key_sid = global_index.findSid(current_user_key);
-
       last_sequence_for_key = ikey.sequence;
     }
 #if 0
@@ -1303,7 +1301,7 @@ Iterator* DBImpl::NewIterator(const ReadOptions& options) {
 void DBImpl::RecordReadSample(Slice key) {
   MutexLock l(&mutex_);
   if (versions_->current()->RecordReadSample(key)) {
-    MaybeScheduleCompaction();
+    // MaybeScheduleCompaction();
   }
 }
 

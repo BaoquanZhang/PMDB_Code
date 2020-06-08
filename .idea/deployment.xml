@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData">
+  <component name="PublishConfigData" autoUpload="On explicit save action" serverName="mist07_HDD_SSD" autoUploadExternalChanges="true">
     <serverData>
+      <paths name="mist07_HDD_SSD">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/bzhang/SLM-DB" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="mist31 (6cbab44f-db65-45a6-a040-e2dc033da6b9)">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/bzhang/SLMDB_CRIS" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/home/bzhang/SLM-DB" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
     </serverData>
+    <option name="myAutoUpload" value="ON_EXPLICIT_SAVE" />
   </component>
 </project>

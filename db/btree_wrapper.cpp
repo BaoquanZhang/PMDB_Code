@@ -87,10 +87,19 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   }
 
   auto it = global_tree.lower_bound(keys[0]);
-  mem_reads_ += std::log(global_tree.size());
+  // mem_reads_ += std::log(global_tree.size());
   int cur_key_pos = 0;
   while (it != global_tree.end() && cur_key_pos < keys.size()) {
     if (it->first == keys[cur_key_pos]) {
+      // update live ratio of sst
+      uint64_t sid = it->second.first;
+      // sst_live_ratio[sst_id]++;
+      sst_valid_key[sid].second--;
+      int liveratio =
+          (int)(sst_valid_key[sid].first / sst_valid_key[sid].second);
+      if (liveratio >= liveratio_threshold) {
+        candidate_list_ssts.emplace(sid);
+      }
       it->second.first = ssts[cur_key_pos];
       it->second.second = blocks[cur_key_pos];
       cur_key_pos++;
@@ -148,10 +157,8 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
 
 uint64_t btree_wrapper::findSid(std::string key) {
   auto it = global_tree.find(key);
-  uint64_t read_counts = std::log(global_tree.size());
-  std::this_thread::sleep_for(
-      std::chrono::nanoseconds(nvm_read_latency_ns_ * read_counts));
-  mem_reads_ += read_counts;
+  std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_read_latency_ns_));
+  mem_reads_++;
   if (it == global_tree.end()) {
     return -1;
   } else {
