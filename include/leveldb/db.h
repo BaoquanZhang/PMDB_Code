@@ -150,6 +150,9 @@ class LEVELDB_EXPORT DB {
 
   // get stats
   virtual void display_read_write() = 0;
+
+  //reset stats
+  virtual void reset_read_write() = 0;
 };
 
 // Destroy the contents of the specified database.

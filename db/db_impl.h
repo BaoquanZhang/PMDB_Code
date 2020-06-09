@@ -86,6 +86,16 @@ class DBImpl : public DB {
     std::cout << "read blocks: " << block_read << std::endl;
   }
 
+  void reset_read_write() override {
+    block_read = 0;
+    mutex_.Lock();
+    for (int i = 0; i < config::kNumLevels; i++) {
+      stats_[i].bytes_read = 0;
+      stats_[i].bytes_written = 0;
+    }
+    mutex_.Unlock();
+  }
+
  private:
   friend class DB;
   struct CompactionState;

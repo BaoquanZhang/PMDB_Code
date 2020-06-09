@@ -548,6 +548,7 @@ class Benchmark {
         RunBenchmark(num_threads, name, method);
       }
       db_->display_read_write();
+      db_->reset_read_write();
     }
   }
 
