@@ -1226,6 +1226,8 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
     }
     s = block_iter->status();
     // delete the block iterator after finishing using it
+    delete file;
+    delete block;
     delete block_iter;
     return s;
   }
