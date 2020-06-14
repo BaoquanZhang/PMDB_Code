@@ -38,7 +38,7 @@ class BtreeIter : public Iterator{
   btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator tree_iter_;
   DBImpl* db_;
   ReadOptions options_;
-  // the key string is with the format of "sst_id sst_offset"
+  // the keys are sst_id and sst_offset
   std::unordered_map<uint64_t, std::unordered_map<uint64_t, Iterator*>> block_iters_;
   Iterator * cur_block_iter_;
 };

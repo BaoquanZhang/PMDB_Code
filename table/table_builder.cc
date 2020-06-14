@@ -142,9 +142,6 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
       r->pending_index_entry = false;
     }
 
-    // get block offset here
-    blocks.push_back(r->offset);
-
     if (r->filter_block != nullptr) {
       r->filter_block->AddKey(key);
     }
@@ -152,6 +149,8 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     r->last_key.assign(key.data(), key.size());
     r->num_entries++;
     r->data_block.Add(key, value);
+    // get block offset here
+    blocks.push_back(r->pending_handle.offset());
 
     const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
     if (estimated_block_size >= r->options.block_size) {

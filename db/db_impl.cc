@@ -1207,6 +1207,7 @@ Status DBImpl::GetFromBlock(const ReadOptions& options, const Slice& key, std::s
     BlockContents block_contents;
     s = ReadBlock(file, options, block_handle, &block_contents);
     if (!s.ok()) {
+      delete file;
       return s;
     }
 

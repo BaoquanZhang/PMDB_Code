@@ -83,11 +83,8 @@ class btree_wrapper {
   BtreeMapIter seektoEnd() {return global_tree.end(); }
 
   BtreeMapIter seektoLast() {
-    auto res = global_tree.begin();
-    uint64_t  bsize = global_tree.size();
-    for(int i = 1; i < bsize && res!=global_tree.end(); i++){
-      res++;
-    }
+    auto res = global_tree.end();
+    res--;
     return res;
   }
 
@@ -100,7 +97,7 @@ class btree_wrapper {
   }
 
   BtreeMapIter seek(const Slice& target){
-    return global_tree.find(target.data());
+    return global_tree.lower_bound(target.data());
   }
 
  private:
@@ -110,8 +107,6 @@ class btree_wrapper {
   std::atomic<uint64_t> mem_writes_{0};
   uint64_t nvm_write_latency_ns_;
   uint64_t nvm_read_latency_ns_;
-  btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator
-      cur_iter_;
 };
 }
 

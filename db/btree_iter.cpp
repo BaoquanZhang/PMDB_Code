@@ -36,6 +36,7 @@ void BtreeIter::SeekToLast(){
 Status BtreeIter::UpdateCurBlockIter() {
   Status s = Status::IOError("updating block iter failed!");
   if(tree_iter_ != global_index.seektoEnd()) {
+    std::string key = tree_iter_->first;
     auto sst_offset = tree_iter_->second;
     uint64_t sst_id = sst_offset.first;
     uint64_t file_offset = sst_offset.second;
@@ -55,7 +56,7 @@ Status BtreeIter::UpdateCurBlockIter() {
       block_handle.set_offset(file_offset);
       block_handle.set_size(db_->options_.block_size);
       BlockContents block_contents;
-      /* Read block failed. */
+      /* TODO: Reading block failed. */
       s = ReadBlock(file, options_, block_handle, &block_contents);
       if (!s.ok()) {
         delete file;
@@ -76,7 +77,9 @@ Status BtreeIter::UpdateCurBlockIter() {
 
 void BtreeIter::Seek(const Slice& target){
   tree_iter_ = global_index.seek(target);
-  UpdateCurBlockIter();
+  if (tree_iter_ != global_index.seektoEnd()) {
+    UpdateCurBlockIter();
+  }
   if (cur_block_iter_ && cur_block_iter_->Valid()) {
     cur_block_iter_->Seek(target);
   }
@@ -85,7 +88,9 @@ void BtreeIter::Seek(const Slice& target){
 void BtreeIter::Next() {
   if(tree_iter_ != global_index.seektoEnd()){
     tree_iter_++;
-    UpdateCurBlockIter();
+    if (tree_iter_ != global_index.seektoEnd()) {
+      UpdateCurBlockIter();
+    }
     if (cur_block_iter_ && cur_block_iter_->Valid()) {
       cur_block_iter_++;
     }
@@ -93,7 +98,7 @@ void BtreeIter::Next() {
 }
 
 void BtreeIter::Prev() {
-  if(tree_iter_ != global_index.seektoFirst()){
+  if(tree_iter_ != global_index.seektoFirst()) {
     tree_iter_--;
     UpdateCurBlockIter();
     if (cur_block_iter_ && cur_block_iter_->Valid()) {
@@ -103,7 +108,7 @@ void BtreeIter::Prev() {
 }
 
 Slice BtreeIter::key() const {
-  return global_index.key(tree_iter_);
+  return tree_iter_->first;
 }
 
 bool BtreeIter::Valid() const {
