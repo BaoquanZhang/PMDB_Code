@@ -170,6 +170,8 @@ class DBImpl : public DB {
 
   Status OpenCompactionOutputFile(CompactionState* compact);
   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, std::vector<std::string> keys, std::vector<uint64_t> ssts,
+                                    std::vector<uint64_t> block_offsets, std::vector<uint64_t> block_size);
+  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, std::vector<std::string> keys, std::vector<uint64_t> ssts,
                                  std::vector<uint64_t> block_offsets);
   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
   Status InstallCompactionResults(CompactionState* compact)

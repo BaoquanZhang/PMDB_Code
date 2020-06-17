@@ -20,7 +20,11 @@ namespace leveldb {
 #define NVM_WRITE_LATENCY_NS 500
 #define NVM_READ_LATENCY_NS 200
 
-typedef btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator BtreeMapIter;
+struct leafnode{
+  uint64_t sid,block_offset,block_size;
+};
+
+typedef btree::btree_map<std::string, leafnode>::iterator BtreeMapIter;
 
 struct FileMetaData;
 class Version;
@@ -50,7 +54,12 @@ class btree_wrapper {
   void insertKey(std::string key, uint64_t sst_id, uint64_t block_offset);
 
   void insertKeys(std::vector<std::string> keys, std::vector<uint64_t> ssts,
+                  std::vector<uint64_t> block_offset,std::vector<uint64_t> block_size);
+
+  /*
+   * void insertKeys(std::vector<std::string> keys, std::vector<uint64_t> ssts,
                   std::vector<uint64_t> blocks);
+                  */
 
   /* Return the current size of whole index
    * */
@@ -60,7 +69,7 @@ class btree_wrapper {
 
   std::string scanLeafnode(std::string cur_key, uint64_t num);
 
-  uint64_t findSid(std::string key);
+  //uint64_t findSid(std::string key);
 
   std::string getCurrentKey() { return cur_key_; }
   void setCurrentKey(std::string& cur_key) { cur_key_ = cur_key; }
@@ -101,7 +110,8 @@ class btree_wrapper {
   }
 
  private:
-  btree::btree_map<std::string, std::pair<uint64_t, uint64_t>> global_tree;
+  //btree::btree_map<std::string, std::pair<uint64_t, uint64_t>> global_tree;
+  btree::btree_map<std::string, leafnode> global_tree;
   std::string cur_key_;
   std::atomic<uint64_t> mem_reads_{0};
   std::atomic<uint64_t> mem_writes_{0};

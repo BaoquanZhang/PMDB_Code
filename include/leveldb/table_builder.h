@@ -57,6 +57,8 @@ class LEVELDB_EXPORT TableBuilder {
   // However, record block offset
   void Add(const Slice& key, const Slice& value, std::vector<uint64_t>& blocks);
 
+  void Add(const Slice& key, const Slice& value, std::vector<uint64_t>& blocks_offset, std::vector<uint64_t>& blocks_size);
+
   // Advanced operation: flush any buffered key/value pairs to file.
   // Can be used to ensure that two adjacent entries never live in
   // the same data block.  Most clients should not need to use this method.
@@ -69,6 +71,8 @@ class LEVELDB_EXPORT TableBuilder {
   // Finish building the table.  Stops using the file passed to the
   // constructor after this function returns.
   // REQUIRES: Finish(), Abandon() have not been called
+  Status Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
+                std::vector<uint64_t> block_offset, std::vector<uint64_t> block_size);
   Status Finish(std::vector<std::string> keys, std::vector<uint64_t> ssts,
                 std::vector<uint64_t> block_offset);
   Status Finish();

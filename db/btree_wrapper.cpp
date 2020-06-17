@@ -37,10 +37,11 @@ bool btree_wrapper::findKey(std::string key,
   if (it == global_tree.end()) {
     return false;
   }
-  sst_offset = it->second;
+  sst_offset = std::make_pair(it->second.sid,it->second.block_offset);
   return true;
 }
 
+/*
 void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
                               uint64_t block_offset) {
   // insert the key to position
@@ -66,24 +67,30 @@ void btree_wrapper::insertKey(std::string key, uint64_t sst_id,
   }
   mem_writes_++;
 }
+*/
 
 void btree_wrapper::insertKeys(std::vector<std::string> keys,
                                std::vector<uint64_t> ssts,
-                               std::vector<uint64_t> blocks) {
+                               std::vector<uint64_t> block_offset,
+                               std::vector<uint64_t> block_size) {
   assert(keys.size() > 0);
   assert(keys.size() == ssts.size());
-  assert(keys.size() == blocks.size());
+  assert(keys.size() == block_offset.size());
+  assert(key.size() == block_size.size());
   std::pair<uint64_t, uint64_t> valid_invalid(keys.size(), 0);
   std::pair<uint64_t, std::pair<uint64_t, uint64_t>> entry(ssts[0],
                                                            valid_invalid);
   sst_valid_key.insert(entry);
 
-  std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>>>
-      entries;
+  //std::vector<std::pair<const std::string, std::pair<uint64_t, uint64_t>> entries;
+  std::vector<std::pair<const std::string, leafnode>> entries;
   entries.reserve((keys.size()));
 
   for (uint64_t i = 0; i < keys.size(); i++) {
-    entries.emplace_back(keys[i], std::make_pair(ssts[i], blocks[i]));
+    struct leafnode node = {.sid=ssts[i],
+                            .block_offset=block_offset[i],
+                            .block_size=block_size[i]};
+    entries.emplace_back(keys[i], node);
   }
 
   auto it = global_tree.lower_bound(keys[0]);
@@ -92,7 +99,7 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
   while (it != global_tree.end() && cur_key_pos < keys.size()) {
     if (it->first == keys[cur_key_pos]) {
       // update live ratio of sst
-      uint64_t sid = it->second.first;
+      uint64_t sid = it->second.sid;
       // sst_live_ratio[sst_id]++;
       sst_valid_key[sid].second--;
       int liveratio =
@@ -100,8 +107,9 @@ void btree_wrapper::insertKeys(std::vector<std::string> keys,
       if (liveratio >= liveratio_threshold) {
         candidate_list_ssts.emplace(sid);
       }
-      it->second.first = ssts[cur_key_pos];
-      it->second.second = blocks[cur_key_pos];
+      it->second.sid = ssts[cur_key_pos];
+      it->second.block_offset = block_offset[cur_key_pos];
+      it->second.block_size = block_offset[cur_key_pos];
       cur_key_pos++;
       it++;
     } else if (it->first < keys[cur_key_pos]) {
@@ -142,7 +150,7 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
   std::string next_key;
   while (it != global_tree.end()) {
     for (uint64_t i = 0; i < num && it != global_tree.end(); it++, i++) {
-      unique_file_id.emplace(it->second.first);
+      unique_file_id.emplace(it->second.sid);
       mem_reads_++;
     }
     if (unique_file_id.size() >= leafnodescan_threshold) {
@@ -155,6 +163,7 @@ std::string btree_wrapper::scanLeafnode(std::string cur_key, uint64_t num) {
   return next_key;
 }
 
+/*
 uint64_t btree_wrapper::findSid(std::string key) {
   auto it = global_tree.find(key);
   std::this_thread::sleep_for(std::chrono::nanoseconds(nvm_read_latency_ns_));
@@ -166,5 +175,6 @@ uint64_t btree_wrapper::findSid(std::string key) {
     return entry.first;
   }
 }
+*/
 
 }

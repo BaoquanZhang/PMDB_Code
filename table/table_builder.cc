@@ -158,6 +158,47 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     }
   }
 
+void TableBuilder::Add(const Slice& key, const Slice& value, std::vector<uint64_t>& blocks_offset, std::vector<uint64_t>& blocks_size){
+  Rep* r = rep_;
+  assert(!r->closed);
+  if (!ok()) return;
+  if (r->num_entries > 0) {
+    assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
+  }
+
+  if (r->pending_index_entry) {
+    assert(r->data_block.empty());
+    r->options.comparator->FindShortestSeparator(&r->last_key, key);
+    std::string handle_encoding;
+    r->pending_handle.EncodeTo(&handle_encoding);
+    r->index_block.Add(r->last_key, Slice(handle_encoding));
+    r->pending_index_entry = false;
+  }
+
+  if (r->filter_block != nullptr) {
+    r->filter_block->AddKey(key);
+  }
+
+  r->last_key.assign(key.data(), key.size());
+  r->num_entries++;
+  r->data_block.Add(key, value);
+  // get block offset here
+  blocks_offset.push_back(r->offset);
+
+  const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
+  if (estimated_block_size >= r->options.block_size) {
+    Flush();
+    uint64_t block_size = r->pending_handle.size();
+    int blocks_offset_size = blocks_offset.size();
+    int blocks_size_size = blocks_size.size();
+    if(blocks_offset_size > blocks_size_size){
+      for(int i = 0; i < (blocks_offset_size - blocks_size_size); i++){
+        blocks_size.push_back(block_size);
+      }
+    }
+  }
+}
+
 void TableBuilder::Flush() {
   Rep* r = rep_;
   assert(!r->closed);
@@ -234,7 +275,8 @@ Status TableBuilder::status() const { return rep_->status; }
 
 Status TableBuilder::Finish(std::vector<std::string> keys,
                             std::vector<uint64_t> ssts,
-                            std::vector<uint64_t> block_offset) {
+                            std::vector<uint64_t> block_offset,
+                            std::vector<uint64_t> block_size) {
   Rep* r = rep_;
   Flush();
   assert(!r->closed);
@@ -290,7 +332,70 @@ Status TableBuilder::Finish(std::vector<std::string> keys,
   }
 
   global_index.insertKeys(std::move(keys), std::move(ssts),
-                          std::move(block_offset));
+                          std::move(block_offset),std::move(block_size));
+
+  return r->status;
+}
+
+Status TableBuilder::Finish(std::vector<std::string> keys,
+                            std::vector<uint64_t> ssts,
+                            std::vector<uint64_t> block_offset) {
+  Rep* r = rep_;
+  Flush();
+  assert(!r->closed);
+  r->closed = true;
+
+  BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
+
+  // Write filter block
+  if (ok() && r->filter_block != nullptr) {
+    WriteRawBlock(r->filter_block->Finish(), kNoCompression,
+                  &filter_block_handle);
+  }
+
+  // Write metaindex block
+  if (ok()) {
+    BlockBuilder meta_index_block(&r->options);
+    if (r->filter_block != nullptr) {
+      // Add mapping from "filter.Name" to location of filter data
+      std::string key = "filter.";
+      key.append(r->options.filter_policy->Name());
+      std::string handle_encoding;
+      filter_block_handle.EncodeTo(&handle_encoding);
+      meta_index_block.Add(key, handle_encoding);
+    }
+
+    // TODO(postrelease): Add stats and other meta blocks
+    WriteBlock(&meta_index_block, &metaindex_block_handle);
+  }
+
+  // Write index block
+  if (ok()) {
+    if (r->pending_index_entry) {
+      r->options.comparator->FindShortSuccessor(&r->last_key);
+      std::string handle_encoding;
+      r->pending_handle.EncodeTo(&handle_encoding);
+      r->index_block.Add(r->last_key, Slice(handle_encoding));
+      r->pending_index_entry = false;
+    }
+    WriteBlock(&r->index_block, &index_block_handle);
+  }
+
+  // Write footer
+  if (ok()) {
+    Footer footer;
+    footer.set_metaindex_handle(metaindex_block_handle);
+    footer.set_index_handle(index_block_handle);
+    std::string footer_encoding;
+    footer.EncodeTo(&footer_encoding);
+    r->status = r->file->Append(footer_encoding);
+    if (r->status.ok()) {
+      r->offset += footer_encoding.size();
+    }
+  }
+
+ // global_index.insertKeys(std::move(keys), std::move(ssts),
+  //                        std::move(block_offset));
 
   return r->status;
 }

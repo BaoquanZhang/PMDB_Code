@@ -37,10 +37,11 @@ Status BtreeIter::UpdateCurBlockIter() {
   Status s = Status::IOError("updating block iter failed!");
   if(tree_iter_ != global_index.seektoEnd()) {
     std::string key = tree_iter_->first;
-    auto sst_offset = tree_iter_->second;
-    uint64_t sst_id = sst_offset.first;
-    uint64_t file_offset = sst_offset.second;
-    if (block_iters_[sst_id][file_offset] == nullptr) {
+    auto entry = tree_iter_->second;
+    uint64_t sst_id = entry.sid;
+    uint64_t block_offset = entry.block_offset;
+    uint64_t block_size = entry.block_size;
+    if (block_iters_[sst_id][block_offset] == nullptr) {
       uint64_t file_size;
       RandomAccessFile* file = nullptr;
       std::string fname = TableFileName(db_->dbname_, sst_id);
@@ -53,8 +54,9 @@ Status BtreeIter::UpdateCurBlockIter() {
         return s;
       }
       BlockHandle block_handle;
-      block_handle.set_offset(file_offset);
-      block_handle.set_size(db_->options_.block_size);
+      block_handle.set_offset(block_offset);
+     // block_handle.set_size(db_->options_.block_size);
+      block_handle.set_size(block_size);
       BlockContents block_contents;
       /* TODO: Reading block failed. */
       s = ReadBlock(file, options_, block_handle, &block_contents);
@@ -65,12 +67,12 @@ Status BtreeIter::UpdateCurBlockIter() {
       // create a block in memory using the block content
       Block* block = new Block(block_contents);
       // Construct a block iterator for the block
-      block_iters_[sst_id][file_offset] =
+      block_iters_[sst_id][block_offset] =
           block->NewIterator(db_->options_.comparator);
       delete file;
       delete block;
     }
-    cur_block_iter_ = block_iters_[sst_id][file_offset];
+    cur_block_iter_ = block_iters_[sst_id][block_offset];
   }
   return s;
 }

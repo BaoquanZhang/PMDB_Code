@@ -35,7 +35,8 @@ class BtreeIter : public Iterator{
   bool Valid() const override;
 
  private:
-  btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator tree_iter_;
+  //btree::btree_map<std::string, std::pair<uint64_t, uint64_t>>::iterator tree_iter_;
+  btree::btree_map<std::string, leafnode>::iterator tree_iter_;
   DBImpl* db_;
   ReadOptions options_;
   // the keys are sst_id and sst_offset

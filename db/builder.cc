@@ -28,7 +28,8 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
   // we use three arrays to record them.
   std::vector<std::string> keys;
   std::vector<uint64_t> ssts;
-  std::vector<uint64_t> blocks;
+  std::vector<uint64_t> block_offset;
+  std::vector<uint64_t> block_size;
 
   std::string fname = TableFileName(dbname, meta->number);
 
@@ -49,11 +50,14 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
       keys.push_back(real_key);
       ssts.push_back(meta->number);
       // we have to enter table builder to find block offset
-      builder->Add(key, iter->value(), blocks);
+      builder->Add(key, iter->value(), block_offset, block_size);
     }
-
+   /* for(int i = 0; i < keys.size(); i++){
+      printf("(%s,%llu,%llu,%llu) \n",keys[i].c_str(),ssts[i],block_offset[i],block_size[i]);
+    }
+    */
     // Finish and check for builder errors
-    s = builder->Finish(std::move(keys), std::move(ssts), std::move(blocks));
+    s = builder->Finish(std::move(keys), std::move(ssts), std::move(block_offset), std::move(block_size));
     if (s.ok()) {
       meta->file_size = builder->FileSize();
       assert(meta->file_size > 0);

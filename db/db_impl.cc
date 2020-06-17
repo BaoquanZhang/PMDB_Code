@@ -810,6 +810,63 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input,
                                           std::vector<std::string> keys,
                                           std::vector<uint64_t> ssts,
+                                          std::vector<uint64_t> block_offset,
+                                          std::vector<uint64_t> block_size) {
+  assert(compact != nullptr);
+  assert(compact->outfile != nullptr);
+  assert(compact->builder != nullptr);
+
+  const uint64_t output_number = compact->current_output()->number;
+  assert(output_number != 0);
+
+  // Check for iterator errors
+  Status s = input->status();
+  const uint64_t current_entries = compact->builder->NumEntries();
+  if (s.ok()) {
+    mutex_.Lock();
+    Version* v = versions_->current();
+    mutex_.Unlock();
+    s = compact->builder->Finish(std::move(keys), std::move(ssts),
+                                 std::move(block_offset),std::move(block_size));
+  } else {
+    compact->builder->Abandon();
+  }
+  const uint64_t current_bytes = compact->builder->FileSize();
+  compact->current_output()->file_size = current_bytes;
+  compact->total_bytes += current_bytes;
+  delete compact->builder;
+  compact->builder = nullptr;
+
+  // Finish and check for file errors
+  if (s.ok()) {
+    s = compact->outfile->Sync();
+  }
+  if (s.ok()) {
+    s = compact->outfile->Close();
+  }
+  delete compact->outfile;
+  compact->outfile = nullptr;
+
+  if (s.ok() && current_entries > 0) {
+    // Verify that the table is usable
+    Iterator* iter =
+        table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);
+    s = iter->status();
+    delete iter;
+    if (s.ok()) {
+      Log(options_.info_log, "Generated table #%llu@%d: %lld keys, %lld bytes",
+          (unsigned long long)output_number, compact->compaction->level(),
+          (unsigned long long)current_entries,
+          (unsigned long long)current_bytes);
+    }
+  }
+  return s;
+}
+
+Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
+                                          Iterator* input,
+                                          std::vector<std::string> keys,
+                                          std::vector<uint64_t> ssts,
                                           std::vector<uint64_t> block_offset) {
   assert(compact != nullptr);
   assert(compact->outfile != nullptr);
@@ -964,6 +1021,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
   std::vector<std::string> key_to_update;
   std::vector<uint64_t> block_offset;
+  std::vector<uint64_t> block_size;
   std::vector<uint64_t> new_file_ids;
   while (input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
     // Prioritize immutable compaction work
@@ -1053,7 +1111,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
        // record the output file for single level index
       new_file_ids.push_back(compact->current_output()->number);
       key_to_update.emplace_back(current_user_key);
-      compact->builder->Add(key, input->value(),block_offset);
+      compact->builder->Add(key, input->value(),block_offset,block_size);
       // record the keys to update in the single level index
       //
       //key_to_update.back().push_back(current_key);
@@ -1061,10 +1119,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
-        status = FinishCompactionOutputFile(compact, input, key_to_update, new_file_ids, block_offset);
+        status = FinishCompactionOutputFile(compact, input, key_to_update, new_file_ids, block_offset,block_size);
         new_file_ids.clear();
         key_to_update.clear();
         block_offset.clear();
+        block_size.clear();
         if (!status.ok()) {
           break;
         }
@@ -1078,10 +1137,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     status = Status::IOError("Deleting DB during compaction");
   }
   if (status.ok() && compact->builder != nullptr) {
-    status = FinishCompactionOutputFile(compact, input, key_to_update, new_file_ids, block_offset);
+    status = FinishCompactionOutputFile(compact, input, key_to_update, new_file_ids, block_offset,block_size);
     new_file_ids.clear();
     key_to_update.clear();
     block_offset.clear();
+    block_size.clear();
   }
   if (status.ok()) {
     status = input->status();
