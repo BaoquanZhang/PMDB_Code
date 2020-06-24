@@ -867,12 +867,13 @@ class Benchmark {
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
       iter->Seek(key);
-      if (iter->Valid() && iter->key() == key) found++;
+      if (iter->Valid() && iter->key() == key)
+        found++;
+      else
+        continue;
       int j = 0;
       while (j < len) {
         iter->Next();
-        iter->key();
-        iter->value();
         j++;
       }
       delete iter;

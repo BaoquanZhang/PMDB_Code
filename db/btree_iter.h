@@ -9,6 +9,7 @@
 #include "leveldb/iterator.h"
 #include "db/btree_wrapper.h"
 #include "table/block.h"
+#include "table/format.h"
 
 #include <unordered_map>
 
@@ -19,7 +20,7 @@ class DBImpl;
 class BtreeIter : public Iterator{
  public:
   BtreeIter(DBImpl* db, const ReadOptions& options)
-      : db_(db), options_(options), cur_block_iter_(nullptr){}
+      : db_(db), options_(options), cur_block_(nullptr), cur_block_iter_(nullptr){}
   BtreeIter(const BtreeIter&) = delete;
   BtreeIter& operator=(const BtreeIter&) = delete;
   ~BtreeIter();
@@ -40,8 +41,10 @@ class BtreeIter : public Iterator{
   DBImpl* db_;
   ReadOptions options_;
   // the keys are sst_id and sst_offset
-  std::unordered_map<uint64_t, std::unordered_map<uint64_t, Iterator*>> block_iters_;
-  Iterator * cur_block_iter_;
+  std::unordered_map<uint64_t,
+                     std::unordered_map<uint64_t, BlockContents>> block_contents_;
+  Block* cur_block_;
+  Iterator* cur_block_iter_;
 };
 
 Iterator* NewBtreeIter(DBImpl* db, const ReadOptions& options);

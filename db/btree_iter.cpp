@@ -3,7 +3,6 @@
 //
 #include "btree_iter.h"
 #include "filename.h"
-#include "table/format.h"
 #include "db/db_impl.h"
 
 namespace leveldb{
@@ -12,16 +11,6 @@ Iterator* NewBtreeIter(DBImpl* db,const ReadOptions& options){
 }
 
 BtreeIter::~BtreeIter() {
-  //delete all stored block iters
-  for (auto file_it = block_iters_.begin();
-       file_it != block_iters_.end();
-       file_it++) {
-    for (auto offset_it = file_it->second.begin();
-         offset_it != file_it->second.end();
-         offset_it++) {
-      delete offset_it->second;
-    }
-  }
 }
 
 void BtreeIter::SeekToFirst(){
@@ -41,7 +30,8 @@ Status BtreeIter::UpdateCurBlockIter() {
     uint64_t sst_id = entry.sid;
     uint64_t block_offset = entry.block_offset;
     uint64_t block_size = entry.block_size;
-    if (block_iters_[sst_id][block_offset] == nullptr) {
+    if (block_contents_[sst_id].count(block_offset) == 0) {
+      // the block has never been read.
       uint64_t file_size;
       RandomAccessFile* file = nullptr;
       std::string fname = TableFileName(db_->dbname_, sst_id);
@@ -55,24 +45,19 @@ Status BtreeIter::UpdateCurBlockIter() {
       }
       BlockHandle block_handle;
       block_handle.set_offset(block_offset);
-     // block_handle.set_size(db_->options_.block_size);
       block_handle.set_size(block_size);
-      BlockContents block_contents;
-      /* TODO: Reading block failed. */
-      s = ReadBlock(file, options_, block_handle, &block_contents);
+      s = ReadBlock(file, options_, block_handle,
+                    &block_contents_[sst_id][block_offset]);
       if (!s.ok()) {
         delete file;
         return s;
       }
-      // create a block in memory using the block content
-      Block* block = new Block(block_contents);
-      // Construct a block iterator for the block
-      block_iters_[sst_id][block_offset] =
-          block->NewIterator(db_->options_.comparator);
-      delete file;
-      delete block;
     }
-    cur_block_iter_ = block_iters_[sst_id][block_offset];
+    delete cur_block_;
+    delete cur_block_iter_;
+    cur_block_ = new Block(block_contents_[sst_id][block_offset]);
+    cur_block_iter_ = cur_block_->NewIterator(db_->options_.comparator);
+    cur_block_iter_->Seek(Slice(tree_iter_->first));
   }
   return s;
 }
@@ -82,9 +67,6 @@ void BtreeIter::Seek(const Slice& target){
   if (tree_iter_ != global_index.seektoEnd()) {
     UpdateCurBlockIter();
   }
-  if (cur_block_iter_ && cur_block_iter_->Valid()) {
-    cur_block_iter_->Seek(target);
-  }
 }
 
 void BtreeIter::Next() {
@@ -93,18 +75,14 @@ void BtreeIter::Next() {
     if (tree_iter_ != global_index.seektoEnd()) {
       UpdateCurBlockIter();
     }
-    if (cur_block_iter_ && cur_block_iter_->Valid()) {
-      cur_block_iter_++;
-    }
   }
 }
 
 void BtreeIter::Prev() {
   if(tree_iter_ != global_index.seektoFirst()) {
     tree_iter_--;
-    UpdateCurBlockIter();
-    if (cur_block_iter_ && cur_block_iter_->Valid()) {
-      cur_block_iter_--;
+    if (tree_iter_ != global_index.seektoEnd()) {
+      UpdateCurBlockIter();
     }
   }
 }
@@ -114,8 +92,8 @@ Slice BtreeIter::key() const {
 }
 
 bool BtreeIter::Valid() const {
-  return tree_iter_ != global_index.seektoEnd()
-      && cur_block_iter_ && cur_block_iter_->Valid();
+  return cur_block_iter_!= nullptr
+         && cur_block_iter_->Valid();
 }
 
 Slice BtreeIter::value() const {
