@@ -190,14 +190,14 @@ void TableBuilder::WriteBlock(BlockBuilder* block, BlockHandle* handle, bool isD
     }
   }
 
+  WriteRawBlock(block_contents, type, handle);
+
   if (isData) {
     block_writes++;
-    block->set_size(block_contents.size());
-    block->set_offset(r->offset);
+    block->set_size(handle->size());
+    block->set_offset(handle->offset());
     r->pending_data_blocks.push_back(*block);
   }
-
-  WriteRawBlock(block_contents, type, handle);
 
   r->compressed_output.clear();
   block->Reset();

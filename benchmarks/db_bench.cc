@@ -907,10 +907,10 @@ class Benchmark {
     int range_len = isShortRange ? FLAGS_short_range_len : FLAGS_long_range_len;
     int found = 0;
     for (int i = 0; i < reads_ / range_len; i++) {
-      Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
+      Iterator* iter = db_->NewIterator(options, key);
       iter->Seek(key);
       int next_count = 0;
       while (iter->Valid() && next_count < range_len) {

@@ -1270,6 +1270,35 @@ Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
   return internal_iter;
 }
 
+Iterator* DBImpl::NewInternalIterator(const ReadOptions& options,
+                                      SequenceNumber* latest_snapshot,
+                                      uint32_t* seed,
+                                      Slice key) {
+  mutex_.Lock();
+  *latest_snapshot = versions_->LastSequence();
+
+  // Collect together all needed child iterators
+  std::vector<Iterator*> list;
+  list.push_back(mem_->NewIterator());
+  mem_->Ref();
+  if (imm_ != nullptr) {
+    list.push_back(imm_->NewIterator());
+    imm_->Ref();
+  }
+  versions_->current()->AddIterators(options, &list, key);
+  Iterator* internal_iter =
+      NewMergingIterator(&internal_comparator_, &list[0], list.size());
+  versions_->current()->Ref();
+
+  IterState* cleanup = new IterState(&mutex_, mem_, imm_, versions_->current());
+  internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
+
+  *seed = ++seed_;
+  mutex_.Unlock();
+  return internal_iter;
+}
+
+
 Iterator* DBImpl::TEST_NewInternalIterator() {
   SequenceNumber ignored;
   uint32_t ignored_seed;
@@ -1439,6 +1468,18 @@ Iterator* DBImpl::NewIterator(const ReadOptions& options) {
                             ? static_cast<const SnapshotImpl*>(options.snapshot)
                                   ->sequence_number()
                             : latest_snapshot),
+                       seed);
+}
+
+Iterator* DBImpl::NewIterator(const ReadOptions& options, Slice key) {
+  SequenceNumber latest_snapshot;
+  uint32_t seed;
+  Iterator* iter = NewInternalIterator(options, &latest_snapshot, &seed, key);
+  return NewDBIterator(this, user_comparator(), iter,
+                       (options.snapshot != nullptr
+                        ? static_cast<const SnapshotImpl*>(options.snapshot)
+                            ->sequence_number()
+                        : latest_snapshot),
                        seed);
 }
 

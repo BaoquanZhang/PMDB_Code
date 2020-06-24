@@ -248,6 +248,34 @@ void Version::AddIterators(const ReadOptions& options,
   }
 }
 
+void Version::AddIterators(const ReadOptions& options,
+                           std::vector<Iterator*>* iters,
+                           Slice key) {
+  auto range_it = disjoint_ranges.lower_bound(key.ToString().substr(0,16));
+  auto ssts = range_it->second->get_files();
+  // Merge all level zero files together since they may overlap
+  for (size_t i = 0; i < files_[0].size(); i++) {
+    if (ssts.count(files_[0][i]->number) == 0)
+      continue;
+    iters->push_back(vset_->table_cache_->NewIterator(
+        options, files_[0][i]->number, files_[0][i]->file_size));
+  }
+
+  // For levels > 0, we can use a concatenating iterator that sequentially
+  // walks through the non-overlapping files in the level, opening them
+  // lazily.
+  for (int level = 1; level < config::kNumLevels; level++) {
+    if (!files_[level].empty()) {
+      for (int j = 0; j < files_[level].size(); j++) {
+        if (ssts.count(files_[level][j]->number) > 0) {
+          iters->push_back(vset_->table_cache_->NewIterator(
+              options, files_[level][j]->number, files_[level][j]->file_size));
+        }
+      }
+    }
+  }
+}
+
 // Callback from TableCache::Get()
 namespace {
 enum SaverState {

@@ -49,6 +49,7 @@ class DBImpl : public DB {
       const Slice& key,
       std::string* value);
   Iterator* NewIterator(const ReadOptions&) override;
+  Iterator* NewIterator(const ReadOptions&, Slice key) override;
   const Snapshot* GetSnapshot() override;
   void ReleaseSnapshot(const Snapshot* snapshot) override;
   bool GetProperty(const Slice& property, std::string* value) override;
@@ -185,6 +186,10 @@ class DBImpl : public DB {
   Iterator* NewInternalIterator(const ReadOptions&,
                                 SequenceNumber* latest_snapshot,
                                 uint32_t* seed);
+  Iterator* NewInternalIterator(const ReadOptions&,
+                                SequenceNumber* latest_snapshot,
+                                uint32_t* seed,
+                                Slice key);
 
   Status NewDB();
 
