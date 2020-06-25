@@ -279,6 +279,14 @@ Status TableBuilder::Finish(std::vector<std::string> keys,
                             std::vector<uint64_t> block_size) {
   Rep* r = rep_;
   Flush();
+  uint64_t last_block_size = r->pending_handle.size();
+  auto blocks_offset_size = block_offset.size();
+  auto blocks_size_size = block_size.size();
+  if(blocks_offset_size > blocks_size_size){
+    for(int i = 0; i < (blocks_offset_size - blocks_size_size); i++){
+      block_size.push_back(last_block_size);
+    }
+  }
   assert(!r->closed);
   r->closed = true;
 
@@ -332,7 +340,7 @@ Status TableBuilder::Finish(std::vector<std::string> keys,
   }
 
   global_index.insertKeys(std::move(keys), std::move(ssts),
-                          std::move(block_offset),std::move(block_size));
+                          std::move(block_offset), std::move(block_size));
 
   return r->status;
 }
