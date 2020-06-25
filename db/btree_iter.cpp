@@ -53,8 +53,6 @@ Status BtreeIter::UpdateCurBlockIter() {
         return s;
       }
     }
-    delete cur_block_;
-    delete cur_block_iter_;
     cur_block_ = new Block(block_contents_[sst_id][block_offset]);
     cur_block_iter_ = cur_block_->NewIterator(db_->options_.comparator);
     cur_block_iter_->Seek(Slice(tree_iter_->first));
